@@ -51,6 +51,8 @@ export const POSView: React.FC = () => {
     currency,
     settings,
     currentUser,
+    canVoidSales,
+    canViewCosts,
     t,
     showToast,
   } = useApp();
@@ -94,6 +96,17 @@ export const POSView: React.FC = () => {
       return matchCat && matchSearch;
     });
   }, [products, selectedCategory, searchQuery]);
+
+  // Role-based sales visibility: Staff sees only their own sales history
+  const isStaffOnly = currentUser?.role === 'staff' || currentUser?.role === 'cashier';
+  const visibleSales = useMemo(() => {
+    if (isStaffOnly && currentUser) {
+      return sales.filter(
+        (s) => s.cashierId === currentUser.id || s.cashierName === currentUser.displayName
+      );
+    }
+    return sales;
+  }, [sales, currentUser, isStaffOnly]);
 
   // Handle Barcode Scan / Enter
   const handleBarcodeSubmit = (e: React.FormEvent) => {
@@ -627,8 +640,8 @@ export const POSView: React.FC = () => {
                 </span>
               </div>
 
-              {/* Estimated profit for manager/owner only */}
-              {currentUser.role !== 'cashier' && (
+              {/* Estimated profit for manager/owner/admin only */}
+              {canViewCosts && (
                 <div className="flex justify-between text-[11px] text-emerald-700 bg-emerald-50 px-2 py-1 rounded-md font-medium">
                   <span>กำไรประมาณการบิลนี้:</span>
                   <span>{formatCurrency(cartTotals.profitTotal, currency)}</span>
@@ -657,13 +670,17 @@ export const POSView: React.FC = () => {
           <div className="max-w-6xl mx-auto bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
             <div className="p-4 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
-                <h3 className="font-bold text-base text-slate-800">ประวัติการขายล่าสุด</h3>
+                <h3 className="font-bold text-base text-slate-800">
+                  {isStaffOnly ? 'ประวัติการขายของคุณ (My Sales)' : 'ประวัติการขายล่าสุด'}
+                </h3>
                 <p className="text-xs text-slate-500">
-                  รายการบิลขายทั้งหมด และสามารถยกเลิกบิลเพื่อคืนสินค้าเข้าสต็อก
+                  {isStaffOnly
+                    ? 'รายการบิลขายที่คุณเป็นผู้ทำรายการ'
+                    : 'รายการบิลขายทั้งหมดในระบบ สามารถตรวจสอบและยกเลิกบิล'}
                 </p>
               </div>
               <span className="text-xs text-slate-500 font-medium">
-                ทั้งหมด {sales.length} รายการ
+                {isStaffOnly ? `รายการของคุณ ${visibleSales.length} รายการ` : `ทั้งหมด ${visibleSales.length} รายการ`}
               </span>
             </div>
 
@@ -674,6 +691,7 @@ export const POSView: React.FC = () => {
                     <th className="py-3 px-4">เลขที่บิล</th>
                     <th className="py-3 px-4">วัน-เวลา</th>
                     <th className="py-3 px-4">ลูกค้า</th>
+                    <th className="py-3 px-4">พนักงานขาย</th>
                     <th className="py-3 px-4">ประเภท</th>
                     <th className="py-3 px-4">วิธีชำระ</th>
                     <th className="py-3 px-4 text-right">ยอดรวม</th>
@@ -682,14 +700,14 @@ export const POSView: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {sales.length === 0 ? (
+                  {visibleSales.length === 0 ? (
                     <tr>
-                      <td colSpan={8} className="py-8 text-center text-slate-400">
-                        ยังไม่มีประวัติการขาย
+                      <td colSpan={9} className="py-8 text-center text-slate-400">
+                        {isStaffOnly ? 'คุณยังไม่มีประวัติการขาย' : 'ยังไม่มีประวัติการขายในระบบ'}
                       </td>
                     </tr>
                   ) : (
-                    sales.map((sale) => (
+                    visibleSales.map((sale) => (
                       <tr key={sale.id} className="hover:bg-slate-50/80 transition">
                         <td className="py-3 px-4 font-mono font-bold text-blue-700">
                           {sale.invoiceNumber}
@@ -699,6 +717,9 @@ export const POSView: React.FC = () => {
                         </td>
                         <td className="py-3 px-4 font-medium text-slate-800">
                           {sale.customerName || 'ลูกค้าทั่วไป'}
+                        </td>
+                        <td className="py-3 px-4 text-slate-600 text-xs">
+                          {sale.cashierName || '-'}
                         </td>
                         <td className="py-3 px-4">
                           <span
@@ -740,11 +761,11 @@ export const POSView: React.FC = () => {
                           >
                             ใบเสร็จ
                           </button>
-                          {sale.status === 'completed' && (
+                          {sale.status === 'completed' && canVoidSales && (
                             <button
                               onClick={() => setVoidSaleTarget(sale)}
                               className="px-2 py-1 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg text-xs font-semibold"
-                              title="ยกเลิกและคืนสต็อก"
+                              title="ยกเลิกและคืนสต็อก (เฉพาะผู้มีสิทธิ์)"
                             >
                               ยกเลิกบิล
                             </button>

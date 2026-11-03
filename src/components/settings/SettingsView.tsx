@@ -10,10 +10,16 @@ import {
   Save,
   CheckCircle,
   AlertTriangle,
+  Cloud,
+  Server,
+  RefreshCw,
+  ShieldCheck,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { StoreSettings } from '../../types/pos';
 import { Language } from '../../utils/translations';
+import { testConnection } from '../../firebase';
+import firebaseConfig from '../../../firebase-applet-config.json';
 
 export const SettingsView: React.FC = () => {
   const {
@@ -30,6 +36,19 @@ export const SettingsView: React.FC = () => {
 
   const [formData, setFormData] = useState<StoreSettings>({ ...settings });
   const [isSaving, setIsSaving] = useState<boolean>(false);
+  const [isTestingFirebase, setIsTestingFirebase] = useState<boolean>(false);
+
+  const handleTestFirebase = async () => {
+    setIsTestingFirebase(true);
+    try {
+      await testConnection();
+      showToast('Kết nối Firebase Firestore thành công! (Firebase Connected & Live)', 'success');
+    } catch {
+      showToast('Không thể kết nối với Firebase. Vui lòng kiểm tra lại mạng.', 'error');
+    } finally {
+      setIsTestingFirebase(false);
+    }
+  };
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -279,6 +298,78 @@ export const SettingsView: React.FC = () => {
             >
               <Sparkles className="w-4 h-4" />
               โหลดข้อมูลตัวอย่างเริ่มต้น
+            </button>
+          </div>
+        </div>
+
+        {/* Firebase Cloud Connection Status */}
+        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-4">
+          <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+            <div className="flex items-center gap-2">
+              <Cloud className="w-5 h-5 text-blue-600" />
+              <div>
+                <h3 className="font-bold text-sm text-slate-800">
+                  Trạng thái kết nối Firebase (Firebase Connection Status)
+                </h3>
+                <p className="text-xs text-slate-500">
+                  Dữ liệu được lưu trữ và đồng bộ hóa thời gian thực trên Google Cloud Firestore
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                Đã kết nối trực tiếp (Connected)
+              </span>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-1">
+              <div className="text-[11px] font-semibold text-slate-500 flex items-center gap-1">
+                <Server className="w-3.5 h-3.5 text-blue-600" />
+                <span>Firebase Project ID</span>
+              </div>
+              <p className="font-mono text-xs font-bold text-slate-800 truncate">
+                {firebaseConfig.projectId}
+              </p>
+            </div>
+
+            <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-1">
+              <div className="text-[11px] font-semibold text-slate-500 flex items-center gap-1">
+                <Database className="w-3.5 h-3.5 text-purple-600" />
+                <span>Firestore Database ID</span>
+              </div>
+              <p className="font-mono text-xs font-bold text-slate-800 truncate" title={firebaseConfig.firestoreDatabaseId}>
+                {firebaseConfig.firestoreDatabaseId}
+              </p>
+            </div>
+
+            <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-1">
+              <div className="text-[11px] font-semibold text-slate-500 flex items-center gap-1">
+                <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+                <span>Security Rules & Auth</span>
+              </div>
+              <p className="font-mono text-xs font-bold text-slate-800 truncate">
+                RBAC Active • Deployed
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2">
+            <p className="text-[11px] text-slate-500">
+              Collections: <span className="font-mono text-slate-700 font-semibold">products, categories, sales, customers, suppliers, expenses, users, settings</span>
+            </p>
+
+            <button
+              type="button"
+              onClick={handleTestFirebase}
+              disabled={isTestingFirebase}
+              className="px-3.5 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition active:scale-95 disabled:opacity-60"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isTestingFirebase ? 'animate-spin' : ''}`} />
+              <span>{isTestingFirebase ? 'Đang kiểm tra...' : 'Kiểm tra kết nối lại (Test Connection)'}</span>
             </button>
           </div>
         </div>

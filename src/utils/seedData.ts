@@ -340,6 +340,7 @@ export const defaultSettings: StoreSettings = {
   receiptFooterMessage: 'ขอบพระคุณทุกท่านที่มาอุดหนุน / ยินดีต้อนรับเสมอ',
   lowStockThresholdDefault: 10,
   paperWidth: '80mm',
+  staffInviteCode: 'POS2026',
 };
 
 export async function checkAndSeedInitialData(): Promise<{ seeded: boolean; message: string }> {
@@ -419,16 +420,55 @@ export async function checkAndSeedInitialData(): Promise<{ seeded: boolean; mess
       batch.set(expRef, exp);
     }
 
-    // 7. Initial Admin User
-    const adminUserRef = doc(db, 'users', 'admin_owner');
-    batch.set(adminUserRef, {
+    // 7. Initial 4 Role Users for System Access
+    const nowIso = new Date().toISOString();
+    
+    // Owner
+    const ownerRef = doc(db, 'users', 'user_owner');
+    batch.set(ownerRef, {
       email: 'alaysisomboun@gmail.com',
-      displayName: 'ผู้จัดการ/เจ้าของร้าน (Owner)',
+      displayName: 'คุณอาลัย (เจ้าของร้าน / Owner)',
       role: 'owner',
       phone: '089-123-4567',
       status: 'active',
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+      createdAt: nowIso,
+      updatedAt: nowIso,
+    });
+
+    // Admin
+    const adminRef = doc(db, 'users', 'user_admin');
+    batch.set(adminRef, {
+      email: 'admin@store.pos',
+      displayName: 'สมศักดิ์ สิทธิชัย (ผู้ดูแลระบบ / Admin)',
+      role: 'admin',
+      phone: '081-555-9988',
+      status: 'active',
+      createdAt: nowIso,
+      updatedAt: nowIso,
+    });
+
+    // Manager
+    const managerRef = doc(db, 'users', 'user_manager');
+    batch.set(managerRef, {
+      email: 'manager@store.pos',
+      displayName: 'วิภาวี เกียรติสกุล (ผู้จัดการ / Manager)',
+      role: 'manager',
+      phone: '084-333-2211',
+      status: 'active',
+      createdAt: nowIso,
+      updatedAt: nowIso,
+    });
+
+    // Staff / Cashier
+    const staffRef = doc(db, 'users', 'user_staff');
+    batch.set(staffRef, {
+      email: 'staff@store.pos',
+      displayName: 'กานต์ดา บุญมี (พนักงานขายหน้าร้าน / Staff)',
+      role: 'staff',
+      phone: '086-777-4433',
+      status: 'active',
+      createdAt: nowIso,
+      updatedAt: nowIso,
     });
 
     await batch.commit();

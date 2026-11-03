@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { AppProvider, useApp } from './context/AppContext';
 import { Sidebar } from './components/layout/Sidebar';
 import { Header } from './components/layout/Header';
+import { LoginView } from './components/auth/LoginView';
 import { DashboardView } from './components/dashboard/DashboardView';
 import { POSView } from './components/pos/POSView';
 import { ProductsView } from './components/products/ProductsView';
@@ -13,7 +14,7 @@ import { FinanceView } from './components/finance/FinanceView';
 import { ReportsView } from './components/reports/ReportsView';
 import { EmployeesView } from './components/employees/EmployeesView';
 import { SettingsView } from './components/settings/SettingsView';
-import { CheckCircle2, AlertCircle, Info, X } from 'lucide-react';
+import { CheckCircle2, AlertCircle, Info, X, ShieldAlert } from 'lucide-react';
 
 const ToastContainer: React.FC = () => {
   const { toasts, removeToast } = useApp();
@@ -54,10 +55,56 @@ const ToastContainer: React.FC = () => {
   );
 };
 
+const AccessDeniedView: React.FC = () => {
+  const { currentUser, setActiveTab } = useApp();
+  return (
+    <div className="flex flex-col items-center justify-center min-h-[60vh] p-6 text-center">
+      <div className="w-16 h-16 rounded-2xl bg-red-100 text-red-600 flex items-center justify-center mb-4">
+        <ShieldAlert className="w-8 h-8" />
+      </div>
+      <h3 className="text-lg font-bold text-slate-800">ไม่มีสิทธิ์เข้าถึงหน้านี้ (Access Restricted)</h3>
+      <p className="text-xs text-slate-500 mt-1 max-w-sm">
+        สิทธิ์ของคุณ ({currentUser?.role}) ไม่ได้รับอนุญาตให้เข้าถึงเมนูนี้ กรุณาติดต่อผู้ดูแลระบบหรือเจ้าของร้าน
+      </p>
+      <button
+        onClick={() => setActiveTab(currentUser?.role === 'staff' ? 'pos' : 'dashboard')}
+        className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-xl text-xs font-semibold hover:bg-blue-700 transition"
+      >
+        กลับสู่หน้าหลักที่ได้รับอนุญาต
+      </button>
+    </div>
+  );
+};
+
 const MainContent: React.FC = () => {
-  const { activeTab, loading } = useApp();
+  const { isAuthenticated, currentUser, activeTab, setActiveTab, canAccessTab } = useApp();
   const [collapsed, setCollapsed] = useState<boolean>(false);
   const [mobileOpen, setMobileOpen] = useState<boolean>(false);
+
+  // Enforce access control on tab change or role change
+  useEffect(() => {
+    if (isAuthenticated && currentUser) {
+      if (!canAccessTab(activeTab)) {
+        if (currentUser.role === 'staff' || currentUser.role === 'cashier') {
+          setActiveTab('pos');
+        } else {
+          setActiveTab('dashboard');
+        }
+      }
+    }
+  }, [activeTab, currentUser, isAuthenticated]);
+
+  // If not authenticated, render the Login View
+  if (!isAuthenticated || !currentUser) {
+    return (
+      <>
+        <LoginView />
+        <ToastContainer />
+      </>
+    );
+  }
+
+  const hasAccess = canAccessTab(activeTab);
 
   return (
     <div className="min-h-screen bg-slate-100 flex text-slate-800 font-sans antialiased">
@@ -69,7 +116,7 @@ const MainContent: React.FC = () => {
         setMobileOpen={setMobileOpen}
       />
 
-      {/* Main Area */}
+      {/* Main Content Area */}
       <div
         className={`flex-1 flex flex-col min-h-screen transition-all duration-300 ${
           collapsed ? 'lg:pl-20' : 'lg:pl-64'
@@ -78,17 +125,23 @@ const MainContent: React.FC = () => {
         <Header onMenuToggle={() => setMobileOpen(!mobileOpen)} />
 
         <main className="flex-1 overflow-x-hidden">
-          {activeTab === 'dashboard' && <DashboardView />}
-          {activeTab === 'pos' && <POSView />}
-          {activeTab === 'products' && <ProductsView />}
-          {activeTab === 'inventory' && <InventoryView />}
-          {activeTab === 'customers' && <CustomersView />}
-          {activeTab === 'suppliers' && <SuppliersView />}
-          {activeTab === 'expenses' && <ExpensesView />}
-          {activeTab === 'finance' && <FinanceView />}
-          {activeTab === 'reports' && <ReportsView />}
-          {activeTab === 'employees' && <EmployeesView />}
-          {activeTab === 'settings' && <SettingsView />}
+          {!hasAccess ? (
+            <AccessDeniedView />
+          ) : (
+            <>
+              {activeTab === 'dashboard' && <DashboardView />}
+              {activeTab === 'pos' && <POSView />}
+              {activeTab === 'products' && <ProductsView />}
+              {activeTab === 'inventory' && <InventoryView />}
+              {activeTab === 'customers' && <CustomersView />}
+              {activeTab === 'suppliers' && <SuppliersView />}
+              {activeTab === 'expenses' && <ExpensesView />}
+              {activeTab === 'finance' && <FinanceView />}
+              {activeTab === 'reports' && <ReportsView />}
+              {activeTab === 'employees' && <EmployeesView />}
+              {activeTab === 'settings' && <SettingsView />}
+            </>
+          )}
         </main>
       </div>
 

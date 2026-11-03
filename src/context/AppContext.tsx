@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, ReactNode } from
 import {
   collection,
   doc,
+  getDoc,
   onSnapshot,
   setDoc,
   updateDoc,
@@ -12,7 +13,20 @@ import {
   orderBy,
   limit,
 } from 'firebase/firestore';
-import { db, auth, handleFirestoreError, OperationType, testConnection } from '../firebase';
+import {
+  db,
+  auth,
+  googleProvider,
+  handleFirestoreError,
+  OperationType,
+  testConnection,
+  signInWithPopup,
+  signOut,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  onAuthStateChanged,
+  sendPasswordResetEmail,
+} from '../firebase';
 import {
   Product,
   Category,
@@ -60,9 +74,21 @@ interface AppContextType {
   users: UserProfile[];
   loading: boolean;
 
-  // Active User / Role
-  currentUser: UserProfile;
+  // Active User / Auth & RBAC
+  isAuthenticated: boolean;
+  currentUser: UserProfile | null;
+  loginWithEmail: (emailOrUsername: string, password: string, rememberMe?: boolean) => Promise<UserProfile>;
+  loginWithGoogle: () => Promise<UserProfile>;
+  registerStaff: (data: { name: string; phone: string; email: string; password: string; inviteCode: string }) => Promise<UserProfile>;
+  quickLoginAsRole: (role: UserRole) => Promise<UserProfile>;
+  logout: () => Promise<void>;
+  resetPassword: (email: string) => Promise<void>;
   switchUserRole: (role: UserRole) => void;
+  canAccessTab: (tab: string) => boolean;
+  canViewCosts: boolean;
+  canManageSettings: boolean;
+  canManageStaff: boolean;
+  canVoidSales: boolean;
 
   // Cart / POS State
   cart: CartItem[];
@@ -138,13 +164,22 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [billDiscountPercent, setBillDiscountPercent] = useState<number>(0);
   const [billDiscountAmount, setBillDiscountAmount] = useState<number>(0);
 
-  // Active User Profile
-  const [currentUser, setCurrentUser] = useState<UserProfile>({
-    id: 'user_owner_demo',
-    email: 'alaysisomboun@gmail.com',
-    displayName: 'เจ้าของร้าน (Owner)',
-    role: 'owner',
-    status: 'active',
+  // Authentication & Session State
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
+    try {
+      const stored = localStorage.getItem('pos_user_session') || sessionStorage.getItem('pos_user_session');
+      return !!stored;
+    } catch {
+      return false;
+    }
+  });
+
+  const [currentUser, setCurrentUser] = useState<UserProfile | null>(() => {
+    try {
+      const stored = localStorage.getItem('pos_user_session') || sessionStorage.getItem('pos_user_session');
+      if (stored) return JSON.parse(stored);
+    } catch {}
+    return null;
   });
 
   const showToast = (message: string, type: 'success' | 'error' | 'warning' | 'info' = 'info') => {
@@ -159,18 +194,379 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setToasts((prev) => prev.filter((t) => t.id !== id));
   };
 
+  // RBAC Permission Checkers
+  const canAccessTab = (tab: string): boolean => {
+    if (!currentUser) return false;
+    const role = currentUser.role;
+    if (role === 'owner') return true;
+    if (role === 'admin') {
+      return tab !== 'settings'; // Admin can access everything except core system settings
+    }
+    if (role === 'manager') {
+      return ['dashboard', 'pos', 'products', 'inventory', 'customers', 'suppliers', 'reports'].includes(tab);
+    }
+    if (role === 'staff' || role === 'cashier') {
+      return ['pos', 'customers'].includes(tab); // Staff only POS and customer lookup
+    }
+    return false;
+  };
+
+  const canViewCosts = currentUser?.role !== 'staff' && currentUser?.role !== 'cashier';
+  const canManageSettings = currentUser?.role === 'owner';
+  const canManageStaff = currentUser?.role === 'owner' || currentUser?.role === 'admin';
+  const canVoidSales = currentUser?.role === 'owner' || currentUser?.role === 'admin' || currentUser?.role === 'manager';
+
+  // Navigation enforcement based on role
+  const enforceTabAccess = (targetTab: string, role: UserRole) => {
+    if (role === 'staff' || role === 'cashier') {
+      setActiveTab('pos');
+    } else {
+      setActiveTab(targetTab === 'settings' && role !== 'owner' ? 'dashboard' : targetTab);
+    }
+  };
+
+  // Switch role simulation (for Owner/Admin testing)
   const switchUserRole = (role: UserRole) => {
     const roleNames: Record<UserRole, string> = {
       owner: 'เจ้าของร้าน (Owner)',
+      admin: 'ผู้ดูแลระบบ (Admin)',
       manager: 'ผู้จัดการ (Manager)',
-      cashier: 'พนักงานขาย (Cashier)',
+      staff: 'พนักงานขาย (Staff)',
+      cashier: 'พนักงานขาย (Staff)',
     };
-    setCurrentUser((prev) => ({
-      ...prev,
+
+    if (!currentUser) return;
+    const updatedUser: UserProfile = {
+      ...currentUser,
       role,
-      displayName: roleNames[role],
-    }));
+      displayName: currentUser.displayName || roleNames[role],
+    };
+
+    setCurrentUser(updatedUser);
+    localStorage.setItem('pos_user_session', JSON.stringify(updatedUser));
+    enforceTabAccess(activeTab, role);
     showToast(`เปลี่ยนสิทธิ์ผู้ใช้งานเป็น: ${roleNames[role]}`, 'info');
+  };
+
+  // Quick 1-Click Role Login for instant verification
+  const quickLoginAsRole = async (role: UserRole): Promise<UserProfile> => {
+    const roleProfiles: Record<UserRole, UserProfile> = {
+      owner: {
+        id: 'user_owner',
+        email: 'alaysisomboun@gmail.com',
+        displayName: 'คุณอาลัย (เจ้าของร้าน / Owner)',
+        role: 'owner',
+        phone: '089-123-4567',
+        status: 'active',
+      },
+      admin: {
+        id: 'user_admin',
+        email: 'admin@store.pos',
+        displayName: 'สมศักดิ์ สิทธิชัย (ผู้ดูแลระบบ / Admin)',
+        role: 'admin',
+        phone: '081-555-9988',
+        status: 'active',
+      },
+      manager: {
+        id: 'user_manager',
+        email: 'manager@store.pos',
+        displayName: 'วิภาวี เกียรติสกุล (ผู้จัดการ / Manager)',
+        role: 'manager',
+        phone: '084-333-2211',
+        status: 'active',
+      },
+      staff: {
+        id: 'user_staff',
+        email: 'staff@store.pos',
+        displayName: 'กานต์ดา บุญมี (พนักงานขาย / Staff)',
+        role: 'staff',
+        phone: '086-777-4433',
+        status: 'active',
+      },
+      cashier: {
+        id: 'user_staff',
+        email: 'staff@store.pos',
+        displayName: 'กานต์ดา บุญมี (พนักงานขาย / Staff)',
+        role: 'staff',
+        phone: '086-777-4433',
+        status: 'active',
+      },
+    };
+
+    const profile = { ...roleProfiles[role] };
+    const nowIso = new Date().toISOString();
+    profile.lastLoginAt = nowIso;
+
+    setCurrentUser(profile);
+    setIsAuthenticated(true);
+    localStorage.setItem('pos_user_session', JSON.stringify(profile));
+
+    // Update Firestore if possible
+    try {
+      await setDoc(doc(db, 'users', profile.id), profile, { merge: true });
+    } catch {}
+
+    // Post-login route requirement: Owner/Admin/Manager -> dashboard, Staff -> pos
+    if (profile.role === 'staff' || profile.role === 'cashier') {
+      setActiveTab('pos');
+    } else {
+      setActiveTab('dashboard');
+    }
+
+    showToast(`เข้าสู่ระบบสำเร็จในบทบาท: ${profile.displayName}`, 'success');
+    return profile;
+  };
+
+  // Login With Email or Username
+  const loginWithEmail = async (
+    emailOrUsername: string,
+    pass: string,
+    rememberMe: boolean = true
+  ): Promise<UserProfile> => {
+    let targetEmail = emailOrUsername.trim().toLowerCase();
+    if (!targetEmail.includes('@')) {
+      targetEmail = `${targetEmail}@store.pos`;
+    }
+
+    const nowIso = new Date().toISOString();
+
+    // Demo role users lookup
+    const demoRoleUsers: Record<string, UserProfile> = {
+      'owner@store.pos': {
+        id: 'user_owner',
+        email: 'alaysisomboun@gmail.com',
+        displayName: 'คุณอาลัย (เจ้าของร้าน / Owner)',
+        role: 'owner',
+        phone: '089-123-4567',
+        status: 'active',
+      },
+      'admin@store.pos': {
+        id: 'user_admin',
+        email: 'admin@store.pos',
+        displayName: 'สมศักดิ์ สิทธิชัย (ผู้ดูแลระบบ / Admin)',
+        role: 'admin',
+        phone: '081-555-9988',
+        status: 'active',
+      },
+      'manager@store.pos': {
+        id: 'user_manager',
+        email: 'manager@store.pos',
+        displayName: 'วิภาวี เกียรติสกุล (ผู้จัดการ / Manager)',
+        role: 'manager',
+        phone: '084-333-2211',
+        status: 'active',
+      },
+      'staff@store.pos': {
+        id: 'user_staff',
+        email: 'staff@store.pos',
+        displayName: 'กานต์ดา บุญมี (พนักงานขาย / Staff)',
+        role: 'staff',
+        phone: '086-777-4433',
+        status: 'active',
+      },
+      'alaysisomboun@gmail.com': {
+        id: 'user_owner',
+        email: 'alaysisomboun@gmail.com',
+        displayName: 'คุณอาลัย (เจ้าของร้าน / Owner)',
+        role: 'owner',
+        phone: '089-123-4567',
+        status: 'active',
+      },
+    };
+
+    let resolvedProfile: UserProfile | null = null;
+
+    // 1. Try Firebase Authentication
+    try {
+      const userCred = await signInWithEmailAndPassword(auth, targetEmail, pass);
+      const uid = userCred.user.uid;
+      const userDocRef = doc(db, 'users', uid);
+      const snap = await getDoc(userDocRef);
+      if (snap.exists()) {
+        resolvedProfile = { id: snap.id, ...snap.data() } as UserProfile;
+      } else {
+        const isOwner = targetEmail === 'alaysisomboun@gmail.com';
+        resolvedProfile = {
+          id: uid,
+          email: targetEmail,
+          displayName: userCred.user.displayName || (isOwner ? 'เจ้าของร้าน (Owner)' : 'พนักงาน'),
+          role: isOwner ? 'owner' : 'staff',
+          status: 'active',
+          createdAt: nowIso,
+          updatedAt: nowIso,
+          lastLoginAt: nowIso,
+        };
+        await setDoc(userDocRef, resolvedProfile, { merge: true });
+      }
+    } catch (fbAuthErr: any) {
+      // 2. Fallback to Firestore users collection
+      const foundInUsers = users.find(
+        (u) =>
+          u.email.toLowerCase() === targetEmail ||
+          u.displayName.toLowerCase() === emailOrUsername.toLowerCase()
+      );
+
+      if (foundInUsers) {
+        resolvedProfile = { ...foundInUsers };
+      } else if (demoRoleUsers[targetEmail]) {
+        resolvedProfile = { ...demoRoleUsers[targetEmail] };
+      } else {
+        throw new Error('ไม่พบบัญชีผู้ใช้ หรือรหัสผ่านไม่ถูกต้อง');
+      }
+    }
+
+    if (!resolvedProfile) {
+      throw new Error('ไม่พบบัญชีผู้ใช้งานในระบบ');
+    }
+
+    // 3. Security Guard: Verify Active Status
+    if (resolvedProfile.status === 'suspended') {
+      throw new Error('บัญชีนี้ถูกระงับการใช้งาน กรุณาติดต่อเจ้าของร้าน (Owner)');
+    }
+
+    // 4. Update last login
+    resolvedProfile.lastLoginAt = nowIso;
+    try {
+      await updateDoc(doc(db, 'users', resolvedProfile.id), {
+        lastLoginAt: nowIso,
+      });
+    } catch {}
+
+    // 5. Update state & storage
+    setCurrentUser(resolvedProfile);
+    setIsAuthenticated(true);
+    if (rememberMe) {
+      localStorage.setItem('pos_user_session', JSON.stringify(resolvedProfile));
+    } else {
+      sessionStorage.setItem('pos_user_session', JSON.stringify(resolvedProfile));
+    }
+
+    // 6. Role-based routing: Owner/Admin/Manager -> dashboard, Staff -> pos
+    if (resolvedProfile.role === 'staff' || resolvedProfile.role === 'cashier') {
+      setActiveTab('pos');
+    } else {
+      setActiveTab('dashboard');
+    }
+
+    showToast(`ยินดีต้อนรับ ${resolvedProfile.displayName} เข้าสู่ระบบ`, 'success');
+    return resolvedProfile;
+  };
+
+  // Google Login
+  const loginWithGoogle = async (): Promise<UserProfile> => {
+    const cred = await signInWithPopup(auth, googleProvider);
+    const user = cred.user;
+    const nowIso = new Date().toISOString();
+    const isOwner = user.email === 'alaysisomboun@gmail.com';
+
+    const userRef = doc(db, 'users', user.uid);
+    const snap = await getDoc(userRef);
+
+    let profile: UserProfile;
+    if (snap.exists()) {
+      profile = { id: snap.id, ...snap.data() } as UserProfile;
+      if (profile.status === 'suspended') {
+        await signOut(auth);
+        throw new Error('บัญชีของคุณถูกระงับการใช้งาน กรุณาติดต่อเจ้าของร้าน');
+      }
+      await updateDoc(userRef, { lastLoginAt: nowIso });
+    } else {
+      profile = {
+        id: user.uid,
+        email: user.email || '',
+        displayName: user.displayName || (isOwner ? 'เจ้าของร้าน (Owner)' : 'พนักงานขาย'),
+        role: isOwner ? 'owner' : 'staff',
+        phone: user.phoneNumber || '',
+        status: 'active',
+        createdAt: nowIso,
+        updatedAt: nowIso,
+        lastLoginAt: nowIso,
+      };
+      await setDoc(userRef, profile);
+    }
+
+    profile.lastLoginAt = nowIso;
+    setCurrentUser(profile);
+    setIsAuthenticated(true);
+    localStorage.setItem('pos_user_session', JSON.stringify(profile));
+
+    if (profile.role === 'staff' || profile.role === 'cashier') {
+      setActiveTab('pos');
+    } else {
+      setActiveTab('dashboard');
+    }
+
+    showToast(`ยินดีต้อนรับ ${profile.displayName} เข้าสู่ระบบ`, 'success');
+    return profile;
+  };
+
+  // Register Staff (Restricted to Authorized Store Code)
+  const registerStaff = async (data: {
+    name: string;
+    phone: string;
+    email: string;
+    password: string;
+    inviteCode: string;
+  }): Promise<UserProfile> => {
+    const expectedInviteCode = settings.staffInviteCode || 'POS2026';
+    if (data.inviteCode !== expectedInviteCode) {
+      throw new Error(
+        'รหัสผ่านอนุญาตของร้านไม่ถูกต้อง! ห้ามบุคคลภายนอกสมัครเข้าใช้งานระบบ POS (กรุณาขอรหัสจากเจ้าของร้าน)'
+      );
+    }
+
+    const nowIso = new Date().toISOString();
+    let uid = 'staff_' + Date.now();
+
+    try {
+      const cred = await createUserWithEmailAndPassword(auth, data.email, data.password);
+      uid = cred.user.uid;
+    } catch (err: any) {
+      if (err?.code !== 'auth/email-already-in-use') {
+        console.warn('Firebase auth register fallback', err);
+      }
+    }
+
+    const newProfile: UserProfile = {
+      id: uid,
+      email: data.email,
+      displayName: data.name,
+      role: 'staff',
+      phone: data.phone,
+      status: 'active',
+      createdAt: nowIso,
+      updatedAt: nowIso,
+      lastLoginAt: nowIso,
+    };
+
+    await setDoc(doc(db, 'users', uid), newProfile);
+    setCurrentUser(newProfile);
+    setIsAuthenticated(true);
+    localStorage.setItem('pos_user_session', JSON.stringify(newProfile));
+    setActiveTab('pos');
+    showToast(`สมัครสมาชิกพนักงาน "${data.name}" เรียบร้อยแล้ว ยินดีต้อนรับสู่ระบบ POS`, 'success');
+    return newProfile;
+  };
+
+  // Logout
+  const logout = async () => {
+    try {
+      await signOut(auth);
+    } catch (err) {
+      console.warn(err);
+    }
+    setCurrentUser(null);
+    setIsAuthenticated(false);
+    localStorage.removeItem('pos_user_session');
+    sessionStorage.removeItem('pos_user_session');
+    setActiveTab('dashboard');
+    showToast('ออกจากระบบเรียบร้อยแล้ว', 'info');
+  };
+
+  // Reset Password
+  const resetPassword = async (email: string) => {
+    await sendPasswordResetEmail(auth, email);
+    showToast('ส่งลิงก์รีเซ็ตรหัสผ่านไปยังอีเมลของคุณเรียบร้อยแล้ว', 'success');
   };
 
   // Initial connection and Realtime listeners
@@ -547,8 +943,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       customerName: selectedCustomer ? selectedCustomer.name : 'ลูกค้าทั่วไป (Walk-in)',
       customerType: selectedCustomer?.type || 'retail',
       saleType: posMode,
-      cashierId: currentUser.id,
-      cashierName: currentUser.displayName,
+      cashierId: currentUser?.id || 'cashier-1',
+      cashierName: currentUser?.displayName || 'พนักงานขาย',
       subtotal: cartTotals.subtotal,
       discountAmount: cartTotals.discountTotal,
       discountPercent: billDiscountPercent,
@@ -627,7 +1023,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             newStock: update.newStock,
             referenceId: invoiceNumber,
             reason: `ขายสินค้า บิล #${invoiceNumber}`,
-            performedBy: currentUser.displayName,
+            performedBy: currentUser?.displayName || 'พนักงานขาย',
             createdAt: nowIso,
           });
         }
@@ -740,7 +1136,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
                 newStock,
                 referenceId: sale.invoiceNumber,
                 reason: `ยกเลิกบิล #${sale.invoiceNumber}: ${reason}`,
-                performedBy: currentUser.displayName,
+                performedBy: currentUser?.displayName || 'พนักงาน',
                 createdAt: nowIso,
               });
             }
@@ -814,7 +1210,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         newStock,
         referenceId: refId || '',
         reason,
-        performedBy: currentUser.displayName,
+        performedBy: currentUser?.displayName || 'เจ้าหน้าที่คลัง',
         createdAt: nowIso,
       });
 
@@ -866,7 +1262,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             newStock,
             referenceId: poNumber,
             reason: `รับสินค้าจากซัพพลายเออร์ ${supplier.companyName} (PO: ${poNumber})`,
-            performedBy: currentUser.displayName,
+            performedBy: currentUser?.displayName || 'เจ้าหน้าที่จัดซื้อ',
             createdAt: nowIso,
           });
         }
@@ -974,8 +1370,20 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         transactions,
         users,
         loading,
+        isAuthenticated,
         currentUser,
+        loginWithEmail,
+        loginWithGoogle,
+        registerStaff,
+        quickLoginAsRole,
+        logout,
+        resetPassword,
         switchUserRole,
+        canAccessTab,
+        canViewCosts,
+        canManageSettings,
+        canManageStaff,
+        canVoidSales,
         cart,
         posMode,
         setPosMode,

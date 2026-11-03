@@ -41,6 +41,8 @@ export function formatDateTime(isoString?: string | number | Date): string {
   }
 }
 
+export const formatDate = formatDateTime;
+
 export function formatDateOnly(isoString?: string | number | Date): string {
   if (!isoString) return '-';
   try {

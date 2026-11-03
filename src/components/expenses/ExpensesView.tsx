@@ -112,7 +112,7 @@ export const ExpensesView: React.FC = () => {
         paymentMethod: formData.paymentMethod,
         note: formData.note.trim(),
         receiptUrl: formData.receiptUrl.trim(),
-        recordedBy: currentUser.displayName,
+        recordedBy: currentUser?.displayName || 'พนักงาน',
         createdAt: nowIso,
       });
 
@@ -280,7 +280,7 @@ export const ExpensesView: React.FC = () => {
                     </td>
                     <td className="py-3 px-4 text-slate-600 text-xs">{exp.recordedBy || 'พนักงาน'}</td>
                     <td className="py-3 px-4 text-center">
-                      {currentUser.role === 'owner' && (
+                      {currentUser?.role === 'owner' && (
                         <button
                           onClick={() => handleDeleteExpense(exp.id, exp.title)}
                           className="p-1 text-slate-400 hover:text-red-500 rounded-lg transition"

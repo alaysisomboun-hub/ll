@@ -1,4 +1,4 @@
-export type UserRole = 'owner' | 'manager' | 'cashier';
+export type UserRole = 'owner' | 'admin' | 'manager' | 'staff' | 'cashier';
 
 export interface UserProfile {
   id: string;
@@ -7,6 +7,7 @@ export interface UserProfile {
   role: UserRole;
   phone?: string;
   status: 'active' | 'suspended';
+  lastLoginAt?: string;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -237,5 +238,6 @@ export interface StoreSettings {
   receiptFooterMessage: string;
   lowStockThresholdDefault: number;
   paperWidth: '58mm' | '80mm';
+  staffInviteCode?: string;
   updatedAt?: string;
 }

@@ -16,8 +16,10 @@ import {
   ChevronRight,
   ShieldCheck,
   Store,
+  LogOut,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
+import { UserRole } from '../../types/pos';
 
 interface SidebarProps {
   collapsed: boolean;
@@ -32,7 +34,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
   mobileOpen,
   setMobileOpen,
 }) => {
-  const { activeTab, setActiveTab, t, products, customers, currentUser, switchUserRole } = useApp();
+  const {
+    activeTab,
+    setActiveTab,
+    t,
+    products,
+    customers,
+    currentUser,
+    switchUserRole,
+    canAccessTab,
+    logout,
+  } = useApp();
 
   // Badges
   const lowStockCount = products.filter(
@@ -43,7 +55,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   const debtCustomersCount = customers.filter((c) => (c.outstandingDebt || 0) > 0).length;
 
-  const menuItems = [
+  const allMenuItems = [
     { id: 'dashboard', label: t.dashboard, icon: LayoutDashboard },
     { id: 'pos', label: t.pos, icon: ShoppingCart, highlight: true },
     { id: 'products', label: t.products, icon: Package },
@@ -68,6 +80,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
     { id: 'employees', label: t.employees, icon: UserCog },
     { id: 'settings', label: t.settings, icon: Settings },
   ];
+
+  // RBAC Menu Filtering: Only show menus permitted for the user's role
+  const menuItems = allMenuItems.filter((item) => canAccessTab(item.id));
 
   const handleNavClick = (id: string) => {
     setActiveTab(id);
@@ -121,30 +136,32 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2 overflow-hidden">
                 <div className="w-8 h-8 rounded-full bg-blue-600/40 text-blue-300 flex items-center justify-center text-xs font-semibold shrink-0">
-                  {currentUser.displayName.slice(0, 1)}
+                  {currentUser?.displayName ? currentUser.displayName.slice(0, 1) : 'U'}
                 </div>
                 <div className="truncate">
-                  <p className="text-xs font-semibold text-white truncate">{currentUser.displayName}</p>
+                  <p className="text-xs font-semibold text-white truncate">
+                    {currentUser?.displayName || 'User'}
+                  </p>
                   <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium uppercase tracking-wider bg-blue-500/20 text-blue-300">
-                    {currentUser.role}
+                    {currentUser?.role || 'staff'}
                   </span>
                 </div>
               </div>
             </div>
 
-            {/* Role switch toggle */}
-            <div className="grid grid-cols-3 gap-1 mt-2.5 pt-2 border-t border-slate-700/60 text-[10px]">
-              {(['owner', 'manager', 'cashier'] as const).map((r) => (
+            {/* Role switch toggle - 4 Roles */}
+            <div className="grid grid-cols-4 gap-1 mt-2.5 pt-2 border-t border-slate-700/60 text-[10px]">
+              {(['owner', 'admin', 'manager', 'staff'] as const).map((r) => (
                 <button
                   key={r}
                   onClick={() => switchUserRole(r)}
                   className={`py-1 rounded text-center font-medium transition ${
-                    currentUser.role === r
+                    currentUser?.role === r
                       ? 'bg-blue-600 text-white font-bold shadow-xs'
                       : 'text-slate-400 hover:bg-slate-700/50 hover:text-slate-200'
                   }`}
                 >
-                  {r === 'owner' ? 'เจ้าของ' : r === 'manager' ? 'ผจก.' : 'แคชเชียร์'}
+                  {r === 'owner' ? 'เจ้าของ' : r === 'admin' ? 'แอดมิน' : r === 'manager' ? 'ผจก.' : 'พนักงาน'}
                 </button>
               ))}
             </div>
@@ -153,11 +170,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <div className="flex justify-center py-3 border-b border-slate-800">
             <button
               onClick={() => {
-                const nextRole =
-                  currentUser.role === 'owner' ? 'manager' : currentUser.role === 'manager' ? 'cashier' : 'owner';
-                switchUserRole(nextRole);
+                const roleCycle: Record<string, UserRole> = {
+                  owner: 'admin',
+                  admin: 'manager',
+                  manager: 'staff',
+                  staff: 'owner',
+                  cashier: 'staff',
+                };
+                switchUserRole(roleCycle[currentUser?.role || 'owner'] || 'owner');
               }}
-              title={`สิทธิ์ปัจจุบัน: ${currentUser.role} (คลิกเพื่อเปลี่ยน)`}
+              title={`สิทธิ์ปัจจุบัน: ${currentUser?.role || 'staff'} (คลิกเพื่อเปลี่ยน)`}
               className="w-10 h-10 rounded-xl bg-blue-600/30 text-blue-300 flex items-center justify-center hover:bg-blue-600/50 transition"
             >
               <ShieldCheck className="w-5 h-5" />
@@ -226,9 +248,23 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </div>
         )}
 
+        {/* Logout Button */}
+        <div className="p-3 border-t border-slate-800">
+          <button
+            onClick={logout}
+            className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-rose-400 hover:text-white hover:bg-rose-950/40 border border-transparent hover:border-rose-900/60 rounded-xl transition ${
+              collapsed ? 'justify-center px-0' : ''
+            }`}
+            title="ออกจากระบบ (Sign Out)"
+          >
+            <LogOut className="w-4 h-4 shrink-0" />
+            {!collapsed && <span>ออกจากระบบ</span>}
+          </button>
+        </div>
+
         {/* Quick Version Tag */}
-        <div className="p-3 text-center border-t border-slate-800/80 text-[11px] text-slate-400">
-          {!collapsed && <span>v2.5 Wholesale Cloud Edition</span>}
+        <div className="px-3 pb-3 text-center text-[10px] text-slate-500">
+          {!collapsed && <span>v2.5 Wholesale POS • RBAC Cloud</span>}
         </div>
       </aside>
     </>

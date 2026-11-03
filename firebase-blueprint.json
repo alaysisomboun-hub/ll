@@ -7,9 +7,10 @@
       "properties": {
         "email": { "type": "string", "maxLength": 128 },
         "displayName": { "type": "string", "maxLength": 100 },
-        "role": { "type": "string", "enum": ["owner", "manager", "cashier"] },
+        "role": { "type": "string", "enum": ["owner", "admin", "manager", "staff", "cashier"] },
         "phone": { "type": "string", "maxLength": 30 },
         "status": { "type": "string", "enum": ["active", "suspended"] },
+        "lastLoginAt": { "type": "string" },
         "createdAt": { "type": "string" },
         "updatedAt": { "type": "string" }
       },

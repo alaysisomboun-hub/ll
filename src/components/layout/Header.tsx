@@ -7,6 +7,7 @@ import {
   Database,
   Sparkles,
   Clock,
+  LogOut,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { Language } from '../../utils/translations';
@@ -28,6 +29,8 @@ export const Header: React.FC<HeaderProps> = ({ onMenuToggle }) => {
     products,
     seedDemoData,
     loading,
+    currentUser,
+    logout,
   } = useApp();
 
   const [time, setTime] = React.useState<string>('');
@@ -160,15 +163,36 @@ export const Header: React.FC<HeaderProps> = ({ onMenuToggle }) => {
           </button>
         )}
 
-        {/* Quick POS action button if not already in POS */}
-        {activeTab !== 'pos' && (
-          <button
-            onClick={() => setActiveTab('pos')}
-            className="flex items-center gap-2 px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white text-xs md:text-sm font-semibold rounded-lg shadow-sm shadow-blue-500/20 transition"
-          >
-            <ShoppingCart className="w-4 h-4" />
-            <span className="hidden sm:inline">{t.pos}</span>
-          </button>
+        {/* User Info & Logout Button */}
+        {currentUser && (
+          <div className="flex items-center gap-2 pl-2 border-l border-slate-200">
+            <div className="hidden md:flex flex-col text-right">
+              <span className="text-xs font-bold text-slate-800 leading-tight truncate max-w-[140px]">
+                {currentUser.displayName}
+              </span>
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-blue-600">
+                {currentUser.role === 'owner'
+                  ? '👑 เจ้าของร้าน'
+                  : currentUser.role === 'admin'
+                  ? '🛡️ ผู้ดูแลระบบ'
+                  : currentUser.role === 'manager'
+                  ? '👔 ผู้จัดการ'
+                  : '🛒 พนักงานขาย'}
+              </span>
+            </div>
+
+            <button
+              onClick={() => {
+                if (confirm('คุณต้องการออกจากระบบหรือไม่?')) {
+                  logout();
+                }
+              }}
+              className="p-1.5 text-slate-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition"
+              title="ออกจากระบบ (Sign Out)"
+            >
+              <LogOut className="w-4 h-4" />
+            </button>
+          </div>
         )}
       </div>
     </header>
