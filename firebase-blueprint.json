@@ -1,0 +1,315 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile with role-based permissions (owner, manager, cashier)",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string", "maxLength": 128 },
+        "displayName": { "type": "string", "maxLength": 100 },
+        "role": { "type": "string", "enum": ["owner", "manager", "cashier"] },
+        "phone": { "type": "string", "maxLength": 30 },
+        "status": { "type": "string", "enum": ["active", "suspended"] },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["email", "displayName", "role", "status"]
+    },
+    "Product": {
+      "title": "Product",
+      "description": "Store product with retail, wholesale, and tiered pricing",
+      "type": "object",
+      "properties": {
+        "sku": { "type": "string", "maxLength": 64 },
+        "barcode": { "type": "string", "maxLength": 64 },
+        "name": { "type": "string", "maxLength": 150 },
+        "categoryId": { "type": "string", "maxLength": 64 },
+        "categoryName": { "type": "string", "maxLength": 100 },
+        "unit": { "type": "string", "maxLength": 50 },
+        "costPrice": { "type": "number" },
+        "retailPrice": { "type": "number" },
+        "wholesalePrice": { "type": "number" },
+        "wholesaleMinQty": { "type": "number" },
+        "stockQty": { "type": "number" },
+        "minStockAlert": { "type": "number" },
+        "imageUrl": { "type": "string", "maxLength": 500 },
+        "description": { "type": "string", "maxLength": 500 },
+        "isActive": { "type": "boolean" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["sku", "name", "costPrice", "retailPrice", "stockQty", "unit"]
+    },
+    "Category": {
+      "title": "Category",
+      "description": "Product categories",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "maxLength": 100 },
+        "code": { "type": "string", "maxLength": 50 },
+        "description": { "type": "string", "maxLength": 255 },
+        "itemCount": { "type": "number" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["name"]
+    },
+    "Sale": {
+      "title": "Sale",
+      "description": "Completed sales transactions from POS",
+      "type": "object",
+      "properties": {
+        "invoiceNumber": { "type": "string", "maxLength": 64 },
+        "customerId": { "type": "string", "maxLength": 64 },
+        "customerName": { "type": "string", "maxLength": 100 },
+        "customerType": { "type": "string", "enum": ["retail", "wholesale"] },
+        "saleType": { "type": "string", "enum": ["retail", "wholesale"] },
+        "cashierId": { "type": "string", "maxLength": 64 },
+        "cashierName": { "type": "string", "maxLength": 100 },
+        "subtotal": { "type": "number" },
+        "discountAmount": { "type": "number" },
+        "discountPercent": { "type": "number" },
+        "taxAmount": { "type": "number" },
+        "totalAmount": { "type": "number" },
+        "totalCost": { "type": "number" },
+        "totalProfit": { "type": "number" },
+        "paymentMethod": { "type": "string", "enum": ["cash", "transfer", "credit", "mixed"] },
+        "amountPaid": { "type": "number" },
+        "changeGiven": { "type": "number" },
+        "paymentStatus": { "type": "string", "enum": ["paid", "partial", "unpaid"] },
+        "debtAmount": { "type": "number" },
+        "status": { "type": "string", "enum": ["completed", "voided", "refunded"] },
+        "voidReason": { "type": "string", "maxLength": 255 },
+        "itemCount": { "type": "number" },
+        "notes": { "type": "string", "maxLength": 500 },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["invoiceNumber", "saleType", "subtotal", "totalAmount", "totalCost", "totalProfit", "paymentMethod", "status"]
+    },
+    "SaleItem": {
+      "title": "SaleItem",
+      "description": "Product line item inside a sale",
+      "type": "object",
+      "properties": {
+        "saleId": { "type": "string", "maxLength": 64 },
+        "productId": { "type": "string", "maxLength": 64 },
+        "productName": { "type": "string", "maxLength": 150 },
+        "sku": { "type": "string", "maxLength": 64 },
+        "unit": { "type": "string", "maxLength": 50 },
+        "quantity": { "type": "number" },
+        "costPrice": { "type": "number" },
+        "unitPrice": { "type": "number" },
+        "priceTier": { "type": "string", "enum": ["retail", "wholesale", "custom"] },
+        "discount": { "type": "number" },
+        "totalPrice": { "type": "number" },
+        "totalCost": { "type": "number" },
+        "profit": { "type": "number" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["saleId", "productId", "productName", "quantity", "costPrice", "unitPrice", "totalPrice", "profit"]
+    },
+    "Customer": {
+      "title": "Customer",
+      "description": "Customer record for retail and wholesale buyers",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "maxLength": 120 },
+        "phone": { "type": "string", "maxLength": 30 },
+        "type": { "type": "string", "enum": ["retail", "wholesale"] },
+        "address": { "type": "string", "maxLength": 255 },
+        "totalSpent": { "type": "number" },
+        "orderCount": { "type": "number" },
+        "outstandingDebt": { "type": "number" },
+        "creditLimit": { "type": "number" },
+        "notes": { "type": "string", "maxLength": 500 },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["name", "type"]
+    },
+    "Supplier": {
+      "title": "Supplier",
+      "description": "Vendor or manufacturer for inventory purchases",
+      "type": "object",
+      "properties": {
+        "companyName": { "type": "string", "maxLength": 150 },
+        "contactPerson": { "type": "string", "maxLength": 100 },
+        "phone": { "type": "string", "maxLength": 30 },
+        "email": { "type": "string", "maxLength": 100 },
+        "address": { "type": "string", "maxLength": 255 },
+        "taxId": { "type": "string", "maxLength": 50 },
+        "totalPurchased": { "type": "number" },
+        "outstandingPayable": { "type": "number" },
+        "notes": { "type": "string", "maxLength": 500 },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["companyName", "phone"]
+    },
+    "Purchase": {
+      "title": "Purchase",
+      "description": "Supplier purchase orders and stock restock receipts",
+      "type": "object",
+      "properties": {
+        "poNumber": { "type": "string", "maxLength": 64 },
+        "supplierId": { "type": "string", "maxLength": 64 },
+        "supplierName": { "type": "string", "maxLength": 150 },
+        "totalAmount": { "type": "number" },
+        "paidAmount": { "type": "number" },
+        "outstandingAmount": { "type": "number" },
+        "paymentStatus": { "type": "string", "enum": ["paid", "partial", "unpaid"] },
+        "status": { "type": "string", "enum": ["received", "ordered", "cancelled"] },
+        "itemCount": { "type": "number" },
+        "receivedDate": { "type": "string" },
+        "notes": { "type": "string", "maxLength": 500 },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["poNumber", "supplierId", "supplierName", "totalAmount", "status"]
+    },
+    "InventoryTransaction": {
+      "title": "InventoryTransaction",
+      "description": "Audit trail for stock in, stock out, sale cut, returns, and adjustments",
+      "type": "object",
+      "properties": {
+        "productId": { "type": "string", "maxLength": 64 },
+        "productName": { "type": "string", "maxLength": 150 },
+        "sku": { "type": "string", "maxLength": 64 },
+        "type": { "type": "string", "enum": ["in", "out", "sale", "void_return", "adjustment"] },
+        "quantityChange": { "type": "number" },
+        "previousStock": { "type": "number" },
+        "newStock": { "type": "number" },
+        "referenceId": { "type": "string", "maxLength": 64 },
+        "reason": { "type": "string", "maxLength": 255 },
+        "performedBy": { "type": "string", "maxLength": 100 },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["productId", "type", "quantityChange", "previousStock", "newStock", "reason"]
+    },
+    "Expense": {
+      "title": "Expense",
+      "description": "Store operational expenses",
+      "type": "object",
+      "properties": {
+        "category": { "type": "string", "enum": ["rent", "electricity", "water", "salary", "transport", "supplies", "maintenance", "other"] },
+        "title": { "type": "string", "maxLength": 150 },
+        "amount": { "type": "number" },
+        "date": { "type": "string" },
+        "paymentMethod": { "type": "string", "enum": ["cash", "transfer"] },
+        "note": { "type": "string", "maxLength": 500 },
+        "receiptUrl": { "type": "string", "maxLength": 500 },
+        "recordedBy": { "type": "string", "maxLength": 100 },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["category", "title", "amount", "date", "paymentMethod"]
+    },
+    "Payment": {
+      "title": "Payment",
+      "description": "Payment logs for customer credit clearing, supplier payouts, or pos sales",
+      "type": "object",
+      "properties": {
+        "type": { "type": "string", "enum": ["sale", "debt_repayment", "supplier_payable", "expense"] },
+        "amount": { "type": "number" },
+        "method": { "type": "string", "enum": ["cash", "transfer"] },
+        "referenceId": { "type": "string", "maxLength": 64 },
+        "partyType": { "type": "string", "enum": ["customer", "supplier", "store"] },
+        "partyId": { "type": "string", "maxLength": 64 },
+        "partyName": { "type": "string", "maxLength": 150 },
+        "notes": { "type": "string", "maxLength": 255 },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["type", "amount", "method"]
+    },
+    "Debt": {
+      "title": "Debt",
+      "description": "Debt ledger for accounts receivable (customers) and accounts payable (suppliers)",
+      "type": "object",
+      "properties": {
+        "partyType": { "type": "string", "enum": ["customer", "supplier"] },
+        "partyId": { "type": "string", "maxLength": 64 },
+        "partyName": { "type": "string", "maxLength": 150 },
+        "invoiceOrPoNumber": { "type": "string", "maxLength": 64 },
+        "originalAmount": { "type": "number" },
+        "paidAmount": { "type": "number" },
+        "remainingAmount": { "type": "number" },
+        "dueDate": { "type": "string" },
+        "status": { "type": "string", "enum": ["unpaid", "partial", "cleared"] },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["partyType", "partyId", "partyName", "originalAmount", "remainingAmount", "status"]
+    },
+    "Setting": {
+      "title": "Setting",
+      "description": "Store configuration parameters, tax, currency, and receipt template",
+      "type": "object",
+      "properties": {
+        "storeName": { "type": "string", "maxLength": 150 },
+        "tagline": { "type": "string", "maxLength": 200 },
+        "address": { "type": "string", "maxLength": 300 },
+        "phone": { "type": "string", "maxLength": 50 },
+        "taxId": { "type": "string", "maxLength": 50 },
+        "currency": { "type": "string", "enum": ["LAK", "THB", "USD"] },
+        "currencySymbol": { "type": "string", "maxLength": 10 },
+        "language": { "type": "string", "enum": ["lo", "th", "vi", "en"] },
+        "taxRatePercent": { "type": "number" },
+        "isTaxEnabled": { "type": "boolean" },
+        "receiptFooterMessage": { "type": "string", "maxLength": 300 },
+        "lowStockThresholdDefault": { "type": "number" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["storeName", "currency", "language"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profiles and RBAC role assignments"
+    },
+    "/products/{productId}": {
+      "schema": "Product",
+      "description": "Catalog of retail and wholesale products"
+    },
+    "/categories/{categoryId}": {
+      "schema": "Category",
+      "description": "Catalog categories"
+    },
+    "/sales/{saleId}": {
+      "schema": "Sale",
+      "description": "Completed and recorded POS transactions"
+    },
+    "/sale_items/{saleItemId}": {
+      "schema": "SaleItem",
+      "description": "Line items linked to sales"
+    },
+    "/customers/{customerId}": {
+      "schema": "Customer",
+      "description": "Customer accounts and credit ledgers"
+    },
+    "/suppliers/{supplierId}": {
+      "schema": "Supplier",
+      "description": "Suppliers and vendors"
+    },
+    "/purchases/{purchaseId}": {
+      "schema": "Purchase",
+      "description": "Purchase orders and restocking transactions"
+    },
+    "/inventory_transactions/{transactionId}": {
+      "schema": "InventoryTransaction",
+      "description": "Inventory movement audit logs"
+    },
+    "/expenses/{expenseId}": {
+      "schema": "Expense",
+      "description": "Business expenses"
+    },
+    "/payments/{paymentId}": {
+      "schema": "Payment",
+      "description": "Payment logs"
+    },
+    "/debts/{debtId}": {
+      "schema": "Debt",
+      "description": "Debts and accounts receivable/payable"
+    },
+    "/settings/{settingId}": {
+      "schema": "Setting",
+      "description": "Storewide settings and receipt templates"
+    }
+  }
+}

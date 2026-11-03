@@ -1,0 +1,6 @@
+{
+  "name": "Wholesale & Retail POS System",
+  "description": "ระบบ POS จัดการร้านค้าขายส่งและขายปลีก ครบวงจร พร้อมจัดการสต็อก หนี้สิน รายรับรายจ่าย และรายงานผล",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

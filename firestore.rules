@@ -1,0 +1,118 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Default deny catch-all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isOwnerEmail() {
+      return isSignedIn() && request.auth.token.email == 'alaysisomboun@gmail.com';
+    }
+
+    function isStoreStaff() {
+      return isSignedIn();
+    }
+
+    // Users collection
+    match /users/{userId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && isValidId(userId);
+      allow update: if isSignedIn() && (request.auth.uid == userId || isOwnerEmail());
+      allow delete: if isOwnerEmail();
+    }
+
+    // Products collection
+    match /products/{productId} {
+      allow read: if isSignedIn();
+      allow create, update: if isSignedIn() && isValidId(productId);
+      allow delete: if isSignedIn();
+    }
+
+    // Categories
+    match /categories/{categoryId} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if isSignedIn() && isValidId(categoryId);
+    }
+
+    // Sales transactions
+    match /sales/{saleId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && isValidId(saleId);
+      allow update: if isSignedIn() && isValidId(saleId);
+      allow delete: if isOwnerEmail();
+    }
+
+    // Sale items
+    match /sale_items/{saleItemId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && isValidId(saleItemId);
+      allow update, delete: if isSignedIn() && isValidId(saleItemId);
+    }
+
+    // Customers
+    match /customers/{customerId} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if isSignedIn() && isValidId(customerId);
+    }
+
+    // Suppliers
+    match /suppliers/{supplierId} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if isSignedIn() && isValidId(supplierId);
+    }
+
+    // Purchases
+    match /purchases/{purchaseId} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if isSignedIn() && isValidId(purchaseId);
+    }
+
+    // Inventory transactions
+    match /inventory_transactions/{transactionId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && isValidId(transactionId);
+      allow update, delete: if isOwnerEmail();
+    }
+
+    // Expenses
+    match /expenses/{expenseId} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if isSignedIn() && isValidId(expenseId);
+    }
+
+    // Payments
+    match /payments/{paymentId} {
+      allow read: if isSignedIn();
+      allow create, update: if isSignedIn() && isValidId(paymentId);
+      allow delete: if isOwnerEmail();
+    }
+
+    // Debts
+    match /debts/{debtId} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if isSignedIn() && isValidId(debtId);
+    }
+
+    // Settings
+    match /settings/{settingId} {
+      allow read: if true; // Allows POS receipt & store logo display
+      allow create, update: if isSignedIn() && isValidId(settingId);
+      allow delete: if isOwnerEmail();
+    }
+
+    // Test connection endpoint
+    match /test/{docId} {
+      allow read, write: if true;
+    }
+  }
+}
