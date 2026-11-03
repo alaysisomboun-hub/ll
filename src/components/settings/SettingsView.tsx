@@ -309,10 +309,10 @@ export const SettingsView: React.FC = () => {
               <Cloud className="w-5 h-5 text-blue-600" />
               <div>
                 <h3 className="font-bold text-sm text-slate-800">
-                  Trạng thái kết nối Firebase (Firebase Connection Status)
+                  สถานะการเชื่อมต่อ Firebase (Firebase Cloud Connection)
                 </h3>
                 <p className="text-xs text-slate-500">
-                  Dữ liệu được lưu trữ và đồng bộ hóa thời gian thực trên Google Cloud Firestore
+                  ข้อมูลถูกจัดเก็บและซิงค์แบบเรียลไทม์บน Google Cloud Firestore
                 </p>
               </div>
             </div>
@@ -320,7 +320,7 @@ export const SettingsView: React.FC = () => {
             <div className="flex items-center gap-2">
               <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
                 <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                Đã kết nối trực tiếp (Connected)
+                เชื่อมต่อคลาวด์แล้ว (Connected)
               </span>
             </div>
           </div>
@@ -366,10 +366,10 @@ export const SettingsView: React.FC = () => {
               type="button"
               onClick={handleTestFirebase}
               disabled={isTestingFirebase}
-              className="px-3.5 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition active:scale-95 disabled:opacity-60"
+              className="px-3.5 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition active:scale-95 disabled:opacity-60 cursor-pointer"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${isTestingFirebase ? 'animate-spin' : ''}`} />
-              <span>{isTestingFirebase ? 'Đang kiểm tra...' : 'Kiểm tra kết nối lại (Test Connection)'}</span>
+              <span>{isTestingFirebase ? 'กำลังตรวจสอบ...' : 'ทดสอบการเชื่อมต่อสด (Test Connection)'}</span>
             </button>
           </div>
         </div>

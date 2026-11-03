@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import {
   Search,
   Barcode,
@@ -19,11 +19,23 @@ import {
   Percent,
   Layers,
   ChevronDown,
+  Camera,
+  Scan,
+  Zap,
+  CheckCircle2,
+  Volume2,
+  Lock,
+  Unlock,
+  Sparkles,
 } from 'lucide-react';
+import { collection, doc, setDoc } from 'firebase/firestore';
+import { db, handleFirestoreError, OperationType } from '../../firebase';
 import { useApp } from '../../context/AppContext';
 import { Product, Customer, Sale } from '../../types/pos';
 import { formatCurrency, formatNumber, formatDateTime } from '../../utils/formatters';
 import { ReceiptModal } from './ReceiptModal';
+import { CameraBarcodeScannerModal } from '../common/CameraBarcodeScannerModal';
+import { playScanSuccessSound, playScanErrorSound } from '../../utils/audio';
 
 export const POSView: React.FC = () => {
   const {
@@ -61,6 +73,27 @@ export const POSView: React.FC = () => {
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [barcodeInput, setBarcodeInput] = useState<string>('');
+  const [scanQuantity, setScanQuantity] = useState<number>(1);
+  const [isCameraScannerOpen, setIsCameraScannerOpen] = useState<boolean>(false);
+  const [autoFocusScanner, setAutoFocusScanner] = useState<boolean>(true);
+  const [lastScannedFeedback, setLastScannedFeedback] = useState<{
+    name: string;
+    qty: number;
+    barcode: string;
+    time: string;
+  } | null>(null);
+
+  // Quick Add Product Modal (When scanned barcode is not found in store)
+  const [isQuickAddModalOpen, setIsQuickAddModalOpen] = useState<boolean>(false);
+  const [quickAddBarcode, setQuickAddBarcode] = useState<string>('');
+  const [quickAddName, setQuickAddName] = useState<string>('');
+  const [quickAddCategoryId, setQuickAddCategoryId] = useState<string>('');
+  const [quickAddRetailPrice, setQuickAddRetailPrice] = useState<string>('');
+  const [quickAddWholesalePrice, setQuickAddWholesalePrice] = useState<string>('');
+  const [quickAddCostPrice, setQuickAddCostPrice] = useState<string>('');
+  const [quickAddStockQty, setQuickAddStockQty] = useState<string>('50');
+  const [quickAddUnit, setQuickAddUnit] = useState<string>('ชิ้น');
+  const [isQuickAdding, setIsQuickAdding] = useState<boolean>(false);
 
   // Modals
   const [isCheckoutOpen, setIsCheckoutOpen] = useState<boolean>(false);
@@ -81,6 +114,16 @@ export const POSView: React.FC = () => {
   const [customerSearch, setCustomerSearch] = useState<string>('');
 
   const barcodeInputRef = useRef<HTMLInputElement>(null);
+
+  // Auto focus scanner input when enabled
+  useEffect(() => {
+    if (activeTab === 'terminal' && autoFocusScanner && !isCheckoutOpen && !isCustomerModalOpen && !isQuickAddModalOpen && !isCameraScannerOpen) {
+      const timer = setTimeout(() => {
+        barcodeInputRef.current?.focus();
+      }, 150);
+      return () => clearTimeout(timer);
+    }
+  }, [activeTab, autoFocusScanner, isCheckoutOpen, isCustomerModalOpen, isQuickAddModalOpen, isCameraScannerOpen]);
 
   // Filtered Products
   const filteredProducts = useMemo(() => {
@@ -108,25 +151,138 @@ export const POSView: React.FC = () => {
     return sales;
   }, [sales, currentUser, isStaffOnly]);
 
-  // Handle Barcode Scan / Enter
-  const handleBarcodeSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    const code = barcodeInput.trim();
-    if (!code) return;
+  // Handle Barcode Scan / Enter with Multiplier Support
+  const processScannedBarcode = (code: string, qty: number = scanQuantity) => {
+    const cleanCode = code.trim();
+    if (!cleanCode) return;
+
+    // Check if cashier entered multiplier like "3*8850123000018"
+    let targetQty = qty > 0 ? qty : 1;
+    let actualBarcode = cleanCode;
+    if (cleanCode.includes('*')) {
+      const parts = cleanCode.split('*');
+      const parsedQty = parseInt(parts[0], 10);
+      if (!isNaN(parsedQty) && parsedQty > 0 && parts[1]) {
+        targetQty = parsedQty;
+        actualBarcode = parts[1].trim();
+      }
+    }
 
     const matched = products.find(
       (p) =>
         p.isActive &&
-        (p.barcode === code ||
-          p.sku.toLowerCase() === code.toLowerCase() ||
-          p.name.toLowerCase() === code.toLowerCase())
+        (p.barcode === actualBarcode ||
+          p.sku.toLowerCase() === actualBarcode.toLowerCase() ||
+          p.name.toLowerCase() === actualBarcode.toLowerCase())
     );
 
     if (matched) {
-      addToCart(matched, 1);
+      if (matched.stockQty <= 0) {
+        playScanErrorSound();
+        showToast(`สินค้า "${matched.name}" หมดสต็อกแล้ว!`, 'error');
+        return;
+      }
+
+      addToCart(matched, targetQty);
+      playScanSuccessSound();
       setBarcodeInput('');
+      setLastScannedFeedback({
+        name: matched.name,
+        qty: targetQty,
+        barcode: matched.barcode || matched.sku,
+        time: new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+      });
+      showToast(`+${targetQty} ${matched.name} สแกนเพิ่มลงตะกร้าแล้ว`, 'success');
+      // Reset multiplier back to 1
+      setScanQuantity(1);
     } else {
-      showToast(`ไม่พบสินค้าที่ตรงกับบาร์โค้ด "${code}"`, 'warning');
+      playScanErrorSound();
+      showToast(`ไม่พบสินค้าที่ตรงกับบาร์โค้ด "${actualBarcode}"`, 'warning');
+      setQuickAddBarcode(actualBarcode);
+      setQuickAddName('');
+      setQuickAddCategoryId(categories[0]?.id || '');
+      setQuickAddRetailPrice('');
+      setQuickAddWholesalePrice('');
+      setQuickAddCostPrice('');
+      setIsQuickAddModalOpen(true);
+    }
+
+    if (autoFocusScanner && barcodeInputRef.current) {
+      setTimeout(() => {
+        barcodeInputRef.current?.focus();
+      }, 50);
+    }
+  };
+
+  const handleBarcodeSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    processScannedBarcode(barcodeInput, scanQuantity);
+  };
+
+  // Quick Add Product directly from POS scan
+  const handleQuickAddProduct = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!quickAddName.trim() || !quickAddBarcode.trim()) {
+      showToast('กรุณากรอกชื่อสินค้าและรหัสบาร์โค้ด', 'error');
+      return;
+    }
+
+    try {
+      setIsQuickAdding(true);
+      const retail = parseFloat(quickAddRetailPrice) || 0;
+      const wholesale = parseFloat(quickAddWholesalePrice) || retail;
+      const cost = parseFloat(quickAddCostPrice) || 0;
+      const stock = parseInt(quickAddStockQty, 10) || 0;
+      const cat = categories.find((c) => c.id === quickAddCategoryId);
+
+      const newRef = doc(collection(db, 'products'));
+      const nowIso = new Date().toISOString();
+
+      const newProduct: Product = {
+        id: newRef.id,
+        sku: 'SKU-' + (quickAddBarcode.slice(-6) || Date.now().toString().slice(-6)),
+        barcode: quickAddBarcode.trim(),
+        name: quickAddName.trim(),
+        categoryId: quickAddCategoryId || categories[0]?.id || '',
+        categoryName: cat?.name || 'สินค้าทั่วไป',
+        unit: quickAddUnit || 'ชิ้น',
+        costPrice: cost,
+        retailPrice: retail,
+        wholesalePrice: wholesale,
+        wholesaleMinQty: 3,
+        stockQty: stock,
+        minStockAlert: 5,
+        imageUrl: 'https://images.unsplash.com/photo-1544816155-12df9643f363?w=400&auto=format&fit=crop&q=80',
+        description: 'สร้างด่วนจากระบบสแกนบาร์โค้ดหน้าขาย POS',
+        isActive: true,
+        createdAt: nowIso,
+        updatedAt: nowIso,
+      };
+
+      await setDoc(newRef, newProduct);
+
+      // Immediately add to cart
+      addToCart(newProduct, scanQuantity);
+      playScanSuccessSound();
+      showToast(`เพิ่มสินค้า "${newProduct.name}" และใส่ลงในบิลเรียบร้อยแล้ว`, 'success');
+
+      setIsQuickAddModalOpen(false);
+      setBarcodeInput('');
+      setQuickAddBarcode('');
+      setQuickAddName('');
+      setQuickAddRetailPrice('');
+      setQuickAddWholesalePrice('');
+      setQuickAddCostPrice('');
+      setIsQuickAdding(false);
+
+      if (autoFocusScanner && barcodeInputRef.current) {
+        setTimeout(() => {
+          barcodeInputRef.current?.focus();
+        }, 100);
+      }
+    } catch (err) {
+      setIsQuickAdding(false);
+      handleFirestoreError(err, OperationType.CREATE, 'products');
     }
   };
 
@@ -280,40 +436,164 @@ export const POSView: React.FC = () => {
         <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
           {/* LEFT: Product Catalog Panel */}
           <div className="flex-1 flex flex-col overflow-hidden bg-slate-100 p-3 md:p-4">
-            {/* Search and Barcode Input Bar */}
-            <div className="flex flex-col sm:flex-row gap-2.5 mb-3">
-              {/* Barcode Quick Scan */}
-              <form onSubmit={handleBarcodeSubmit} className="relative sm:w-64">
-                <Barcode className="absolute left-3 top-2.5 w-4 h-4 text-blue-600" />
-                <input
-                  ref={barcodeInputRef}
-                  type="text"
-                  placeholder="สแกนบาร์โค้ดแล้วกด Enter..."
-                  value={barcodeInput}
-                  onChange={(e) => setBarcodeInput(e.target.value)}
-                  className="w-full pl-9 pr-3 py-2 text-xs md:text-sm bg-white border border-blue-200 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-blue-500/30 font-mono shadow-xs"
-                />
-              </form>
+            {/* กล่องสแกนบาร์โค้ดเพิ่มสินค้าด่วน (Barcode Scanner Station) */}
+            <div className="bg-gradient-to-r from-blue-900 via-indigo-900 to-slate-900 text-white rounded-2xl p-3 md:p-3.5 mb-3 shadow-md border border-blue-800/40 space-y-2.5">
+              <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                {/* Title & Pulse Indicator */}
+                <div className="flex items-center gap-2">
+                  <div className="w-7 h-7 rounded-lg bg-blue-500/20 text-blue-400 flex items-center justify-center shrink-0 border border-blue-400/30">
+                    <Barcode className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <div className="font-bold text-xs md:text-sm text-white flex items-center gap-1.5">
+                      <span>กล่องสแกนบาร์โค้ดเพิ่มสินค้า</span>
+                      <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                    </div>
+                    <span className="text-[10px] text-blue-200/80 hidden sm:inline">
+                      รองรับเครื่องสแกนบาร์โค้ด USB / Bluetooth หรือเปิดกล้องสแกน
+                    </span>
+                  </div>
+                </div>
 
-              {/* Keyword Search */}
-              <div className="relative flex-1">
-                <Search className="absolute left-3 top-2.5 w-4 h-4 text-slate-400" />
-                <input
-                  type="text"
-                  placeholder={t.searchProduct}
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full pl-9 pr-3 py-2 text-xs md:text-sm bg-white border border-slate-200 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-blue-500/30 shadow-xs"
-                />
-                {searchQuery && (
+                {/* Right controls: Multiplier, Camera button, Auto-focus lock */}
+                <div className="flex items-center gap-2">
+                  {/* Multiplier / Quantity Picker */}
+                  <div className="flex items-center gap-1 bg-white/10 px-2 py-1 rounded-xl border border-white/15 text-xs">
+                    <span className="text-[11px] text-blue-200 font-medium">จำนวน:</span>
+                    {[1, 2, 5, 10].map((qty) => (
+                      <button
+                        key={qty}
+                        type="button"
+                        onClick={() => setScanQuantity(qty)}
+                        className={`px-1.5 py-0.5 rounded-md text-[11px] font-bold transition cursor-pointer ${
+                          scanQuantity === qty
+                            ? 'bg-blue-500 text-white shadow-xs'
+                            : 'text-blue-100 hover:bg-white/10'
+                        }`}
+                      >
+                        {qty}x
+                      </button>
+                    ))}
+                    <input
+                      type="number"
+                      min="1"
+                      max="999"
+                      value={scanQuantity}
+                      onChange={(e) => setScanQuantity(Math.max(1, parseInt(e.target.value) || 1))}
+                      className="w-10 px-1 py-0.5 text-center text-xs bg-black/30 border border-white/20 rounded text-white font-mono font-bold"
+                    />
+                  </div>
+
+                  {/* Camera Scanner Button */}
                   <button
-                    onClick={() => setSearchQuery('')}
-                    className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600"
+                    type="button"
+                    onClick={() => setIsCameraScannerOpen(true)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white rounded-xl text-xs font-bold shadow-xs transition active:scale-95 cursor-pointer"
                   >
-                    <X className="w-4 h-4" />
+                    <Camera className="w-3.5 h-3.5" />
+                    <span>เปิดกล้องสแกน</span>
                   </button>
-                )}
+
+                  {/* Auto-focus lock toggle */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAutoFocusScanner(!autoFocusScanner);
+                      if (!autoFocusScanner) barcodeInputRef.current?.focus();
+                    }}
+                    title={autoFocusScanner ? 'เปิดล็อกโฟกัสสแกนเนอร์ตลอดเวลา' : 'ปิดล็อกโฟกัส'}
+                    className={`flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-semibold border transition cursor-pointer ${
+                      autoFocusScanner
+                        ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                        : 'bg-white/10 text-slate-300 border-white/15 hover:bg-white/15'
+                    }`}
+                  >
+                    {autoFocusScanner ? <Lock className="w-3 h-3 text-emerald-400" /> : <Unlock className="w-3 h-3 text-slate-400" />}
+                    <span className="hidden sm:inline">{autoFocusScanner ? 'ล็อกเป้าสแกน' : 'ล็อกเป้า'}</span>
+                  </button>
+                </div>
               </div>
+
+              {/* Main Barcode Scan Input Bar */}
+              <div className="flex gap-2">
+                <form onSubmit={handleBarcodeSubmit} className="relative flex-1">
+                  <div className="absolute left-3.5 top-3 flex items-center gap-1 pointer-events-none">
+                    <Barcode className="w-4 h-4 text-blue-400" />
+                  </div>
+                  <input
+                    ref={barcodeInputRef}
+                    type="text"
+                    placeholder="ยิงบาร์โค้ดสินค้าที่นี่ (กด Enter เพื่อเพิ่มลงบิล)..."
+                    value={barcodeInput}
+                    onChange={(e) => setBarcodeInput(e.target.value)}
+                    className="w-full pl-10 pr-24 py-2.5 text-xs sm:text-sm bg-slate-950/70 border-2 border-blue-500/50 focus:border-blue-400 rounded-xl focus:outline-hidden focus:ring-4 focus:ring-blue-500/20 text-white placeholder-blue-200/50 font-mono tracking-wider shadow-inner"
+                  />
+                  <button
+                    type="submit"
+                    className="absolute right-1.5 top-1.5 bottom-1.5 px-3 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-lg transition flex items-center gap-1 shadow-xs cursor-pointer"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>เพิ่ม ({scanQuantity}x)</span>
+                  </button>
+                </form>
+
+                {/* Keyword search input alongside */}
+                <div className="relative w-44 sm:w-60 hidden md:block">
+                  <Search className="absolute left-3 top-3 w-4 h-4 text-slate-400" />
+                  <input
+                    type="text"
+                    placeholder="ค้นหาชื่อสินค้า..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-full pl-9 pr-7 py-2.5 text-xs bg-white text-slate-800 rounded-xl border border-slate-200 focus:outline-hidden focus:ring-2 focus:ring-blue-500 font-medium"
+                  />
+                  {searchQuery && (
+                    <button
+                      onClick={() => setSearchQuery('')}
+                      className="absolute right-2.5 top-3 text-slate-400 hover:text-slate-600"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Real-time Feedback Chip */}
+              {lastScannedFeedback && (
+                <div className="flex items-center justify-between bg-blue-500/20 border border-blue-400/30 px-3 py-1.5 rounded-xl text-xs text-blue-100 animate-in fade-in">
+                  <div className="flex items-center gap-1.5 truncate">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                    <span className="font-semibold text-white">ล่าสุด:</span>
+                    <span className="truncate">{lastScannedFeedback.name}</span>
+                    <span className="bg-blue-600 px-1.5 py-0.5 rounded text-[10px] font-bold text-white shrink-0">
+                      +{lastScannedFeedback.qty}
+                    </span>
+                  </div>
+                  <span className="text-[10px] text-blue-300 font-mono shrink-0 pl-2">
+                    {lastScannedFeedback.time}
+                  </span>
+                </div>
+              )}
+            </div>
+
+            {/* Mobile Keyword Search (visible only on mobile) */}
+            <div className="relative mb-3 md:hidden">
+              <Search className="absolute left-3 top-2.5 w-4 h-4 text-slate-400" />
+              <input
+                type="text"
+                placeholder={t.searchProduct}
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-9 pr-8 py-2 text-xs bg-white border border-slate-200 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-blue-500 shadow-xs"
+              />
+              {searchQuery && (
+                <button
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              )}
             </div>
 
             {/* Category Pills */}
@@ -1130,6 +1410,185 @@ export const POSView: React.FC = () => {
             clearCart();
           }}
         />
+      )}
+
+      {/* CAMERA BARCODE SCANNER MODAL */}
+      <CameraBarcodeScannerModal
+        isOpen={isCameraScannerOpen}
+        onClose={() => setIsCameraScannerOpen(false)}
+        onScan={(code) => processScannedBarcode(code, scanQuantity)}
+        continuous={true}
+        title="กล้องสแกนบาร์โค้ดขายสินค้า (POS Scanner)"
+      />
+
+      {/* QUICK ADD UNLISTED PRODUCT MODAL */}
+      {isQuickAddModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs animate-in fade-in">
+          <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full overflow-hidden border border-slate-200">
+            {/* Modal Header */}
+            <div className="p-4 bg-gradient-to-r from-blue-700 to-indigo-800 text-white flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-white/20 flex items-center justify-center">
+                  <Sparkles className="w-4 h-4 text-amber-300" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-sm">เพิ่มสินค้าด่วนจากบาร์โค้ด</h3>
+                  <p className="text-[11px] text-blue-100">ยังไม่มีบาร์โค้ดนี้ในระบบ กรอกข้อมูลเพื่อเปิดขายได้ทันที</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsQuickAddModalOpen(false)}
+                className="text-white/70 hover:text-white p-1 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Form */}
+            <form onSubmit={handleQuickAddProduct} className="p-4 sm:p-5 space-y-3.5">
+              {/* Barcode display */}
+              <div className="p-2.5 rounded-xl bg-blue-50 border border-blue-200 flex items-center justify-between text-xs">
+                <div className="flex items-center gap-1.5 font-semibold text-blue-900">
+                  <Barcode className="w-4 h-4 text-blue-600" />
+                  <span>รหัสบาร์โค้ด:</span>
+                </div>
+                <span className="font-mono font-bold text-blue-700 bg-white px-2 py-0.5 rounded border border-blue-200">
+                  {quickAddBarcode}
+                </span>
+              </div>
+
+              {/* Product Name */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  ชื่อสินค้า <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  autoFocus
+                  placeholder="เช่น มาม่ารสต้มยำกุ้ง (ซอง)"
+                  value={quickAddName}
+                  onChange={(e) => setQuickAddName(e.target.value)}
+                  className="w-full px-3 py-2 text-xs md:text-sm bg-slate-50 border border-slate-300 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-blue-500 font-medium"
+                />
+              </div>
+
+              {/* Category & Unit */}
+              <div className="grid grid-cols-2 gap-2.5">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">หมวดหมู่</label>
+                  <select
+                    value={quickAddCategoryId}
+                    onChange={(e) => setQuickAddCategoryId(e.target.value)}
+                    className="w-full px-2.5 py-2 text-xs bg-slate-50 border border-slate-300 rounded-xl focus:outline-hidden"
+                  >
+                    {categories.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">หน่วยนับ</label>
+                  <input
+                    type="text"
+                    value={quickAddUnit}
+                    onChange={(e) => setQuickAddUnit(e.target.value)}
+                    placeholder="เช่น ชิ้น, แพ็ค, ลัง"
+                    className="w-full px-2.5 py-2 text-xs bg-slate-50 border border-slate-300 rounded-xl focus:outline-hidden"
+                  />
+                </div>
+              </div>
+
+              {/* Prices: Retail & Wholesale */}
+              <div className="grid grid-cols-2 gap-2.5">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    ราคาขายปลีก ({currency}) <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="number"
+                    required
+                    min="0"
+                    step="any"
+                    placeholder="0"
+                    value={quickAddRetailPrice}
+                    onChange={(e) => setQuickAddRetailPrice(e.target.value)}
+                    className="w-full px-3 py-2 text-xs md:text-sm bg-slate-50 border border-slate-300 rounded-xl font-bold text-blue-700 focus:outline-hidden"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    ราคาขายส่ง ({currency})
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="any"
+                    placeholder="0"
+                    value={quickAddWholesalePrice}
+                    onChange={(e) => setQuickAddWholesalePrice(e.target.value)}
+                    className="w-full px-3 py-2 text-xs md:text-sm bg-slate-50 border border-slate-300 rounded-xl font-bold text-emerald-700 focus:outline-hidden"
+                  />
+                </div>
+              </div>
+
+              {/* Cost Price & Stock Qty */}
+              <div className="grid grid-cols-2 gap-2.5">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    ราคาทุน ({currency})
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="any"
+                    placeholder="0"
+                    value={quickAddCostPrice}
+                    onChange={(e) => setQuickAddCostPrice(e.target.value)}
+                    className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-300 rounded-xl text-slate-700 focus:outline-hidden"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    จำนวนสต็อกแรกเข้า
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={quickAddStockQty}
+                    onChange={(e) => setQuickAddStockQty(e.target.value)}
+                    className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-300 rounded-xl text-slate-700 focus:outline-hidden font-bold"
+                  />
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex gap-2 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setIsQuickAddModalOpen(false)}
+                  className="flex-1 py-2.5 rounded-xl border border-slate-300 text-xs font-semibold text-slate-600 hover:bg-slate-100 transition cursor-pointer"
+                >
+                  ยกเลิก
+                </button>
+                <button
+                  type="submit"
+                  disabled={isQuickAdding}
+                  className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-md transition flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>บันทึกและเพิ่มลงบิล</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
     </div>
   );
