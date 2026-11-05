@@ -31,6 +31,7 @@ import { IncomeModal, incomeCategoryLabels } from './IncomeModal';
 import { ExpenseModal, expenseCategoryLabels } from './ExpenseModal';
 import { FinanceResetModal } from './FinanceResetModal';
 import { TransactionDetailModal, UnifiedTransactionItem } from './TransactionDetailModal';
+import { ResetConfirmModal } from '../common/ResetConfirmModal';
 import { formatCurrency, formatNumber, formatDateOnly, formatDateTime } from '../../utils/formatters';
 
 type FinanceSubTab =
@@ -105,6 +106,7 @@ export const FinanceView: React.FC = () => {
   const [isExpenseModalOpen, setIsExpenseModalOpen] = useState(false);
   const [isResetModalOpen, setIsResetModalOpen] = useState(false);
   const [selectedDetailItem, setSelectedDetailItem] = useState<UnifiedTransactionItem | null>(null);
+  const [itemToDelete, setItemToDelete] = useState<UnifiedTransactionItem | null>(null);
 
   // Check latest reset checkpoint
   const latestReset = useMemo(() => {
@@ -439,14 +441,20 @@ export const FinanceView: React.FC = () => {
   };
 
   // Delete transaction handler
-  const handleDeleteTransaction = async (item: UnifiedTransactionItem) => {
-    if (!confirm(`คุณต้องการลบรายการ "${item.title}" หรือไม่?`)) return;
+  const handleDeleteTransaction = (item: UnifiedTransactionItem) => {
+    setItemToDelete(item);
+  };
+
+  const handleConfirmDeleteTransaction = async () => {
+    if (!itemToDelete) return;
     try {
-      if (item.source === 'manual_income') {
-        await deleteIncome(item.id);
-      } else if (item.source === 'expense') {
-        await deleteExpense(item.id);
+      if (itemToDelete.source === 'manual_income') {
+        await deleteIncome(itemToDelete.id);
+      } else if (itemToDelete.source === 'expense') {
+        await deleteExpense(itemToDelete.id);
       }
+      setSelectedDetailItem(null);
+      setItemToDelete(null);
     } catch (err) {
       console.error(err);
     }
@@ -1830,6 +1838,14 @@ export const FinanceView: React.FC = () => {
         item={selectedDetailItem}
         onClose={() => setSelectedDetailItem(null)}
         onDelete={handleDeleteTransaction}
+      />
+      <ResetConfirmModal
+        isOpen={!!itemToDelete}
+        onClose={() => setItemToDelete(null)}
+        onConfirm={handleConfirmDeleteTransaction}
+        title="ยืนยันการลบรายการ"
+        description={`คุณต้องการลบรายการ "${itemToDelete?.title}" ออกจากระบบหรือไม่?`}
+        confirmLabel="ยืนยันลบรายการ"
       />
     </div>
   );

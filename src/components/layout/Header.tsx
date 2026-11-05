@@ -188,11 +188,7 @@ export const Header: React.FC<HeaderProps> = ({ onMenuToggle }) => {
 
             <button
               type="button"
-              onClick={() => {
-                if (window.confirm('คุณต้องการออกจากระบบหรือไม่?')) {
-                  logout();
-                }
-              }}
+              onClick={() => logout()}
               className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
               title="ออกจากระบบ (Sign Out)"
             >

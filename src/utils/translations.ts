@@ -6,7 +6,9 @@ export interface Translations {
   dashboard: string;
   pos: string;
   products: string;
+  categories?: string;
   inventory: string;
+  purchases?: string;
   customers: string;
   suppliers: string;
   expenses: string;
@@ -14,6 +16,7 @@ export interface Translations {
   reports: string;
   employees: string;
   settings: string;
+  name_management?: string;
 
   // POS
   wholesaleMode: string;

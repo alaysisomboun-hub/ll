@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useMemo, ReactNode } from 'react';
 import {
   collection,
   doc,
@@ -45,7 +45,10 @@ import {
   UserRole,
   CartItem,
   Debt,
+  SystemNamesConfig,
+  SystemNameLog,
 } from '../types/pos';
+import { defaultSystemNames } from '../utils/defaultSystemNames';
 import { Language, translations, Translations } from '../utils/translations';
 import { defaultSettings, checkAndSeedInitialData } from '../utils/seedData';
 import { generateInvoiceNumber } from '../utils/formatters';
@@ -162,6 +165,13 @@ interface AppContextType {
   deleteExpense: (id: string) => Promise<void>;
   recordFinanceReset: (reason: string, periodLabel?: string) => Promise<FinanceReset>;
 
+  // System Names Management
+  systemNames: SystemNamesConfig;
+  systemNameLogs: SystemNameLog[];
+  updateSystemNames: (newConfig: Partial<SystemNamesConfig>, logReason?: string) => Promise<void>;
+  resetSystemNamesToDefault: () => Promise<void>;
+  getDisplayName: (section: 'menus' | 'categories' | 'productTypes' | 'documents' | 'statuses' | 'alerts' | 'roles', key: string, fallback?: string) => string;
+
   // Seeder
   seedDemoData: () => Promise<void>;
 
@@ -192,6 +202,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [financeResets, setFinanceResets] = useState<FinanceReset[]>([]);
   const [transactions, setTransactions] = useState<InventoryTransaction[]>([]);
   const [users, setUsers] = useState<UserProfile[]>([]);
+  const [systemNames, setSystemNames] = useState<SystemNamesConfig>(defaultSystemNames);
+  const [systemNameLogs, setSystemNameLogs] = useState<SystemNameLog[]>([]);
 
   // Cart & POS State
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -234,15 +246,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const canAccessTab = (tab: string): boolean => {
     if (!currentUser) return false;
     const role = currentUser.role;
-    if (role === 'owner') return true;
-    if (role === 'admin') {
-      return tab !== 'settings'; // Admin can access everything except core system settings
-    }
+    if (role === 'owner' || role === 'admin') return true;
     if (role === 'manager') {
-      return ['dashboard', 'pos', 'products', 'inventory', 'customers', 'suppliers', 'reports'].includes(tab);
+      return ['dashboard', 'pos', 'products', 'inventory', 'customers', 'suppliers', 'expenses', 'finance', 'reports', 'name_management'].includes(tab);
     }
     if (role === 'staff' || role === 'cashier') {
-      return ['pos', 'customers'].includes(tab); // Staff only POS and customer lookup
+      return ['pos', 'customers', 'name_management'].includes(tab); // Staff can view name_management (read-only)
     }
     return false;
   };
@@ -766,6 +775,43 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       (err) => handleFirestoreError(err, OperationType.GET, 'users')
     );
 
+    // 12. System Names listener
+    const unsubSystemNames = onSnapshot(
+      doc(db, 'settings', 'system_names'),
+      (snap) => {
+        if (snap.exists()) {
+          const data = snap.data() as Partial<SystemNamesConfig>;
+          setSystemNames((prev) => ({
+            ...prev,
+            ...data,
+            menus: { ...prev.menus, ...(data.menus || {}) },
+            categories: { ...prev.categories, ...(data.categories || {}) },
+            productTypes: { ...prev.productTypes, ...(data.productTypes || {}) },
+            units: data.units && data.units.length > 0 ? data.units : prev.units,
+            documents: { ...prev.documents, ...(data.documents || {}) },
+            statuses: { ...prev.statuses, ...(data.statuses || {}) },
+            alerts: { ...prev.alerts, ...(data.alerts || {}) },
+            roles: { ...prev.roles, ...(data.roles || {}) },
+          }));
+        }
+      },
+      (err) => handleFirestoreError(err, OperationType.GET, 'settings/system_names')
+    );
+
+    // 13. System Name Logs listener
+    const logsQuery = query(collection(db, 'system_name_logs'), orderBy('modifiedAt', 'desc'), limit(100));
+    const unsubNameLogs = onSnapshot(
+      logsQuery,
+      (snap) => {
+        const list: SystemNameLog[] = [];
+        snap.forEach((d) => {
+          list.push({ id: d.id, ...d.data() } as SystemNameLog);
+        });
+        setSystemNameLogs(list);
+      },
+      (err) => handleFirestoreError(err, OperationType.GET, 'system_name_logs')
+    );
+
     return () => {
       unsubSettings();
       unsubProducts();
@@ -778,6 +824,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       unsubResets();
       unsubTx();
       unsubUsers();
+      unsubSystemNames();
+      unsubNameLogs();
     };
   }, []);
 
@@ -1563,6 +1611,96 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
   };
 
+  // System Names Operations
+  const updateSystemNames = async (newConfig: Partial<SystemNamesConfig>, logReason?: string) => {
+    if (currentUser?.role !== 'owner' && currentUser?.role !== 'admin') {
+      showToast('เฉพาะผู้ดูแลระบบ (Admin) หรือ เจ้าของร้านเท่านั้นที่สามารถแก้ไขชื่อระบบได้', 'error');
+      return;
+    }
+    try {
+      const nowIso = new Date().toISOString();
+      const merged: SystemNamesConfig = {
+        ...systemNames,
+        ...newConfig,
+        menus: { ...systemNames.menus, ...(newConfig.menus || {}) },
+        categories: { ...systemNames.categories, ...(newConfig.categories || {}) },
+        productTypes: { ...systemNames.productTypes, ...(newConfig.productTypes || {}) },
+        units: newConfig.units || systemNames.units,
+        documents: { ...systemNames.documents, ...(newConfig.documents || {}) },
+        statuses: { ...systemNames.statuses, ...(newConfig.statuses || {}) },
+        alerts: { ...systemNames.alerts, ...(newConfig.alerts || {}) },
+        roles: { ...systemNames.roles, ...(newConfig.roles || {}) },
+        updatedAt: nowIso,
+        updatedBy: currentUser?.displayName || 'Admin',
+      };
+
+      await setDoc(doc(db, 'settings', 'system_names'), merged, { merge: true });
+      setSystemNames(merged);
+
+      // Save log entry to system_name_logs
+      const logRef = doc(collection(db, 'system_name_logs'));
+      const logItem: SystemNameLog = {
+        id: logRef.id,
+        section: logReason || 'จัดการชื่อระบบ',
+        itemKey: 'settings',
+        oldValue: 'การตั้งค่าเดิม',
+        newValue: 'บันทึกการตั้งค่าชื่อระบบใหม่',
+        modifiedBy: currentUser?.displayName || 'Admin',
+        modifiedAt: nowIso,
+      };
+      await setDoc(logRef, logItem);
+
+      showToast('บันทึกการเปลี่ยนแปลงชื่อและข้อความเรียบร้อยแล้ว', 'success');
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, 'settings/system_names');
+    }
+  };
+
+  const resetSystemNamesToDefault = async () => {
+    if (currentUser?.role !== 'owner' && currentUser?.role !== 'admin') {
+      showToast('เฉพาะผู้ดูแลระบบ (Admin) หรือ เจ้าของร้านเท่านั้นที่สามารถคืนค่าเริ่มต้นได้', 'error');
+      return;
+    }
+    try {
+      const nowIso = new Date().toISOString();
+      const resetConfig: SystemNamesConfig = {
+        ...defaultSystemNames,
+        updatedAt: nowIso,
+        updatedBy: currentUser?.displayName || 'Admin',
+      };
+      await setDoc(doc(db, 'settings', 'system_names'), resetConfig);
+      setSystemNames(resetConfig);
+
+      // Log reset
+      const logRef = doc(collection(db, 'system_name_logs'));
+      await setDoc(logRef, {
+        id: logRef.id,
+        section: 'คืนค่าเริ่มต้น',
+        itemKey: 'all',
+        oldValue: 'ชื่อที่กำหนดเอง',
+        newValue: 'คืนค่าชื่อและข้อความเริ่มต้นทั้งหมด',
+        modifiedBy: currentUser?.displayName || 'Admin',
+        modifiedAt: nowIso,
+      });
+
+      showToast('คืนค่าชื่อและข้อความเริ่มต้นของระบบเรียบร้อยแล้ว', 'info');
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, 'settings/system_names');
+    }
+  };
+
+  const getDisplayName = (
+    section: 'menus' | 'categories' | 'productTypes' | 'documents' | 'statuses' | 'alerts' | 'roles',
+    key: string,
+    fallback?: string
+  ): string => {
+    const sec = systemNames[section];
+    if (sec && typeof sec === 'object' && key in sec) {
+      return (sec as Record<string, string>)[key] || fallback || key;
+    }
+    return fallback || key;
+  };
+
   const seedDemoData = async () => {
     setLoading(true);
     const res = await checkAndSeedInitialData();
@@ -1570,7 +1708,25 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     showToast(res.message, res.seeded ? 'success' : 'info');
   };
 
-  const t = translations[language] || translations.th;
+  const baseT = translations[language] || translations.th;
+  const t: Translations = useMemo(() => {
+    return {
+      ...baseT,
+      dashboard: systemNames.menus.dashboard || baseT.dashboard,
+      pos: systemNames.menus.pos || baseT.pos,
+      products: systemNames.menus.products || baseT.products,
+      categories: systemNames.menus.categories || baseT.categories,
+      inventory: systemNames.menus.inventory || baseT.inventory,
+      purchases: systemNames.menus.purchases || (baseT as any).purchases || 'สั่งซื้อสินค้า',
+      suppliers: systemNames.menus.suppliers || baseT.suppliers,
+      customers: systemNames.menus.customers || baseT.customers,
+      expenses: systemNames.menus.expenses || baseT.expenses,
+      finance: systemNames.menus.finance || baseT.finance,
+      reports: systemNames.menus.reports || baseT.reports,
+      employees: systemNames.menus.employees || baseT.employees,
+      settings: systemNames.menus.settings || baseT.settings,
+    };
+  }, [baseT, systemNames]);
 
   return (
     <AppContext.Provider
@@ -1634,6 +1790,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         deleteIncome,
         deleteExpense,
         recordFinanceReset,
+        systemNames,
+        systemNameLogs,
+        updateSystemNames,
+        resetSystemNamesToDefault,
+        getDisplayName,
         seedDemoData,
         toasts,
         showToast,

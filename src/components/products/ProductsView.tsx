@@ -44,7 +44,15 @@ import { ResetConfirmModal } from '../common/ResetConfirmModal';
 import { playScanSuccessSound, playScanErrorSound } from '../../utils/audio';
 
 export const ProductsView: React.FC = () => {
-  const { products, categories, currency, showToast, currentUser, canViewCosts, t } = useApp();
+  const { products, categories, currency, showToast, currentUser, canViewCosts, t, systemNames } = useApp();
+
+  // Active units configured in System Name Management
+  const activeUnits = useMemo(() => {
+    const units = Array.isArray(systemNames?.units)
+      ? systemNames.units.filter((u) => u.isEnabled !== false).map((u) => u.name)
+      : [];
+    return units.length > 0 ? units : ['ชิ้น', 'แพ็ก', 'กล่อง', 'ลัง', 'โหล', 'ถุง', 'ขวด', 'กก.'];
+  }, [systemNames?.units]);
 
   const [search, setSearch] = useState<string>('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
@@ -812,16 +820,41 @@ export const ProductsView: React.FC = () => {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    หน่วยนับสินค้า
-                  </label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-xs font-semibold text-slate-700">
+                      หน่วยนับสินค้า
+                    </label>
+                    <span className="text-[10px] text-slate-400">เลือกหรือพิมพ์เองได้</span>
+                  </div>
                   <input
                     type="text"
-                    placeholder="เช่น ชิ้น, ลัง, แพ็ค, ถุง, กก."
+                    list="system-units-list"
+                    placeholder="เช่น ชิ้น, ลัง, แพ็ก, กล่อง"
                     value={formData.unit}
                     onChange={(e) => setFormData({ ...formData, unit: e.target.value })}
                     className="w-full px-3 py-2 text-xs md:text-sm bg-slate-50 border border-slate-300 rounded-xl focus:outline-hidden"
                   />
+                  <datalist id="system-units-list">
+                    {activeUnits.map((u) => (
+                      <option key={u} value={u} />
+                    ))}
+                  </datalist>
+                  <div className="flex flex-wrap gap-1 mt-1.5 max-h-16 overflow-y-auto">
+                    {activeUnits.slice(0, 8).map((u) => (
+                      <button
+                        key={u}
+                        type="button"
+                        onClick={() => setFormData({ ...formData, unit: u })}
+                        className={`text-[10px] px-2 py-0.5 rounded-md border transition ${
+                          formData.unit === u
+                            ? 'bg-blue-50 text-blue-700 border-blue-300 font-semibold'
+                            : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100'
+                        }`}
+                      >
+                        {u}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </div>
 

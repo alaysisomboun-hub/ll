@@ -12,6 +12,7 @@ import {
   UserCog,
   Settings,
   AlertTriangle,
+  Type,
   ChevronLeft,
   ChevronRight,
   ShieldCheck,
@@ -58,6 +59,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     currentUser,
     switchUserRole,
     canAccessTab,
+    systemNames,
     logout,
   } = useApp();
 
@@ -120,6 +122,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       items: [
         { id: 'employees', label: t.employees, icon: UserCog },
         { id: 'settings', label: t.settings, icon: Settings },
+        { id: 'name_management', label: systemNames.menus.name_management || 'จัดการชื่อระบบและข้อความ', icon: Type },
       ],
     },
   ];

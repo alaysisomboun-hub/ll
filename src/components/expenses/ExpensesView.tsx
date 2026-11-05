@@ -23,6 +23,7 @@ import { db, handleFirestoreError, OperationType } from '../../firebase';
 import { useApp } from '../../context/AppContext';
 import { Expense, ExpenseCategory } from '../../types/pos';
 import { formatCurrency, formatDateOnly } from '../../utils/formatters';
+import { ResetConfirmModal } from '../common/ResetConfirmModal';
 
 const categoryLabels: Record<ExpenseCategory, string> = {
   rent: 'ค่าเช่าร้าน/อาคาร',
@@ -41,6 +42,7 @@ export const ExpensesView: React.FC = () => {
   const [search, setSearch] = useState<string>('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
+  const [expenseToDelete, setExpenseToDelete] = useState<{ id: string; title: string } | null>(null);
 
   const [formData, setFormData] = useState<{
     category: ExpenseCategory;
@@ -144,13 +146,18 @@ export const ExpensesView: React.FC = () => {
     }
   };
 
-  const handleDeleteExpense = async (id: string, title: string) => {
-    if (!confirm(`คุณต้องการลบรายการรายจ่าย "${title}" หรือไม่?`)) return;
+  const handleDeleteExpense = (id: string, title: string) => {
+    setExpenseToDelete({ id, title });
+  };
+
+  const handleConfirmDeleteExpense = async () => {
+    if (!expenseToDelete) return;
     try {
-      await deleteDoc(doc(db, 'expenses', id));
+      await deleteDoc(doc(db, 'expenses', expenseToDelete.id));
       showToast(`ลบรายการรายจ่ายสำเร็จ`, 'info');
+      setExpenseToDelete(null);
     } catch (err) {
-      handleFirestoreError(err, OperationType.DELETE, `expenses/${id}`);
+      handleFirestoreError(err, OperationType.DELETE, `expenses/${expenseToDelete.id}`);
     }
   };
 
@@ -437,6 +444,16 @@ export const ExpensesView: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* CONFIRM DELETE MODAL */}
+      <ResetConfirmModal
+        isOpen={!!expenseToDelete}
+        onClose={() => setExpenseToDelete(null)}
+        onConfirm={handleConfirmDeleteExpense}
+        title="ยืนยันการลบรายการรายจ่าย"
+        description={`คุณต้องการลบรายการรายจ่าย "${expenseToDelete?.title}" หรือไม่?`}
+        confirmLabel="ยืนยันลบรายการ"
+      />
     </div>
   );
 };

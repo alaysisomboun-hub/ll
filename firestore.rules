@@ -104,5 +104,11 @@ service cloud.firestore {
       allow read: if true;
       allow write: if isValidId(resetId);
     }
+
+    // System name modification history logs
+    match /system_name_logs/{logId} {
+      allow read: if true;
+      allow write: if isValidId(logId);
+    }
   }
 }

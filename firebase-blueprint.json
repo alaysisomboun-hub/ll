@@ -297,6 +297,20 @@
         "createdAt": { "type": "string" }
       },
       "required": ["resetDate", "resetBy", "reason", "createdAt"]
+    },
+    "SystemNameLog": {
+      "title": "SystemNameLog",
+      "description": "Audit trail of system name modifications",
+      "type": "object",
+      "properties": {
+        "section": { "type": "string", "maxLength": 64 },
+        "itemKey": { "type": "string", "maxLength": 64 },
+        "oldValue": { "type": "string", "maxLength": 200 },
+        "newValue": { "type": "string", "maxLength": 200 },
+        "modifiedBy": { "type": "string", "maxLength": 100 },
+        "modifiedAt": { "type": "string" }
+      },
+      "required": ["section", "itemKey", "newValue", "modifiedBy", "modifiedAt"]
     }
   },
   "firestore": {
@@ -359,6 +373,10 @@
     "/settings/{settingId}": {
       "schema": "Setting",
       "description": "Storewide settings and receipt templates"
+    },
+    "/system_name_logs/{logId}": {
+      "schema": "SystemNameLog",
+      "description": "Audit trail of system display name changes"
     }
   }
 }

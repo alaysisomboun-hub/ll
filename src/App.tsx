@@ -14,6 +14,7 @@ import { FinanceView } from './components/finance/FinanceView';
 import { ReportsView } from './components/reports/ReportsView';
 import { EmployeesView } from './components/employees/EmployeesView';
 import { SettingsView } from './components/settings/SettingsView';
+import { SystemNamesView } from './components/system-names/SystemNamesView';
 import { CheckCircle2, AlertCircle, Info, X, ShieldAlert } from 'lucide-react';
 
 const ToastContainer: React.FC = () => {
@@ -140,6 +141,7 @@ const MainContent: React.FC = () => {
               {activeTab === 'reports' && <ReportsView />}
               {activeTab === 'employees' && <EmployeesView />}
               {activeTab === 'settings' && <SettingsView />}
+              {activeTab === 'name_management' && <SystemNamesView />}
             </>
           )}
         </main>

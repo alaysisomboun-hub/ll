@@ -2,6 +2,7 @@ import React, { useRef } from 'react';
 import { Printer, X, CheckCircle, Share2, Download } from 'lucide-react';
 import { Sale, StoreSettings } from '../../types/pos';
 import { formatCurrency, formatDateTime } from '../../utils/formatters';
+import { useApp } from '../../context/AppContext';
 
 interface ReceiptModalProps {
   sale: Sale | null;
@@ -19,6 +20,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
   onNewSale,
 }) => {
   const printRef = useRef<HTMLDivElement>(null);
+  const { systemNames } = useApp();
 
   if (!sale) return null;
 
@@ -79,6 +81,9 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
             {/* Store Header */}
             <div className="text-center pb-3 border-b border-dashed border-slate-400 space-y-1">
               <h2 className="text-sm font-bold tracking-tight text-black">{settings.storeName}</h2>
+              <div className="text-[11px] font-bold text-slate-800 bg-slate-100 py-0.5 rounded">
+                {systemNames?.documents?.receipt || 'ใบเสร็จรับเงิน / ใบกำกับภาษีอย่างย่อ'}
+              </div>
               {settings.tagline && <p className="text-[10px] text-slate-600">{settings.tagline}</p>}
               <p className="text-[10px] text-slate-600 leading-snug">{settings.address}</p>
               <p className="text-[10px] text-slate-600">โทร: {settings.phone}</p>
@@ -108,7 +113,9 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
               <div className="flex justify-between">
                 <span>ประเภทการขาย:</span>
                 <span className="font-bold uppercase">
-                  {sale.saleType === 'wholesale' ? 'ขายส่ง (Wholesale)' : 'ขายปลีก (Retail)'}
+                  {sale.saleType === 'wholesale'
+                    ? (systemNames?.productTypes?.wholesale || 'ขายส่ง (Wholesale)')
+                    : (systemNames?.productTypes?.retail || 'ขายปลีก (Retail)')}
                 </span>
               </div>
             </div>

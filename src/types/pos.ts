@@ -283,3 +283,37 @@ export interface StoreSettings {
   staffInviteCode?: string;
   updatedAt?: string;
 }
+
+export interface SystemNameItem {
+  id: string;
+  key: string;
+  label: string;
+  defaultLabel: string;
+  categoryGroup: 'menu' | 'category' | 'unit' | 'document' | 'status' | 'alert' | 'role';
+  description?: string;
+  isEnabled: boolean;
+  isCustom?: boolean;
+}
+
+export interface SystemNamesConfig {
+  menus: Record<string, string>;
+  categories: Record<string, string>;
+  productTypes: Record<string, string>;
+  units: Array<{ id: string; name: string; isDefault?: boolean; isEnabled: boolean }>;
+  documents: Record<string, string>;
+  statuses: Record<string, string>;
+  alerts: Record<string, string>;
+  roles: Record<string, string>;
+  updatedAt?: string;
+  updatedBy?: string;
+}
+
+export interface SystemNameLog {
+  id: string;
+  section: string;
+  itemKey: string;
+  oldValue: string;
+  newValue: string;
+  modifiedBy: string;
+  modifiedAt: string;
+}
