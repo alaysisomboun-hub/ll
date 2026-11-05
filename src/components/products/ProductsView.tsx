@@ -19,6 +19,7 @@ import {
   CheckCircle2,
   FolderPlus,
   Folder,
+  RotateCcw,
 } from 'lucide-react';
 import {
   collection,
@@ -39,6 +40,7 @@ import {
 } from '../../utils/formatters';
 import { CameraBarcodeScannerModal } from '../common/CameraBarcodeScannerModal';
 import { CategoryModal } from './CategoryModal';
+import { ResetConfirmModal } from '../common/ResetConfirmModal';
 import { playScanSuccessSound, playScanErrorSound } from '../../utils/audio';
 
 export const ProductsView: React.FC = () => {
@@ -54,6 +56,58 @@ export const ProductsView: React.FC = () => {
 
   // Category Modal state
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState<boolean>(false);
+
+  // Reset Modals State
+  const [isResetFiltersModalOpen, setIsResetFiltersModalOpen] = useState<boolean>(false);
+  const [isResetFormModalOpen, setIsResetFormModalOpen] = useState<boolean>(false);
+
+  // Reset Filters & Search Handler
+  const handleResetFilters = () => {
+    setSearch('');
+    setSelectedCategory('all');
+    setStockFilter('all');
+    showToast('รีเซ็ตช่องค้นหาและตัวกรองสินค้าเรียบร้อยแล้ว', 'info');
+  };
+
+  // Reset Product Form Handler
+  const handleResetForm = () => {
+    if (editingProduct) {
+      setFormData({
+        sku: editingProduct.sku || '',
+        barcode: editingProduct.barcode || '',
+        name: editingProduct.name || '',
+        categoryId: editingProduct.categoryId || '',
+        unit: editingProduct.unit || 'ชิ้น',
+        costPrice: editingProduct.costPrice || 0,
+        retailPrice: editingProduct.retailPrice || 0,
+        wholesalePrice: editingProduct.wholesalePrice || 0,
+        wholesaleMinQty: editingProduct.wholesaleMinQty || 5,
+        stockQty: editingProduct.stockQty || 0,
+        minStockAlert: editingProduct.minStockAlert || 10,
+        imageUrl: editingProduct.imageUrl || '',
+        description: editingProduct.description || '',
+        isActive: editingProduct.isActive !== false,
+      });
+    } else {
+      setFormData({
+        sku: generateSku(),
+        barcode: generateBarcode(),
+        name: '',
+        categoryId: categories[0]?.id || '',
+        unit: 'ชิ้น',
+        costPrice: 0,
+        retailPrice: 0,
+        wholesalePrice: 0,
+        wholesaleMinQty: 5,
+        stockQty: 0,
+        minStockAlert: 10,
+        imageUrl: '',
+        description: '',
+        isActive: true,
+      });
+    }
+    showToast('รีเซ็ตข้อมูลในแบบฟอร์มเรียบร้อยแล้ว', 'info');
+  };
 
   // Barcode Scanner Integration
   const [scanBarcodeInput, setScanBarcodeInput] = useState<string>('');
@@ -446,6 +500,19 @@ export const ProductsView: React.FC = () => {
               <option value="out_of_stock">หมดสต็อก (Out of Stock)</option>
             </select>
           </div>
+
+          {/* Reset Filters Button */}
+          {(search !== '' || selectedCategory !== 'all' || stockFilter !== 'all') && (
+            <button
+              type="button"
+              onClick={() => setIsResetFiltersModalOpen(true)}
+              className="flex items-center gap-1.5 px-3.5 py-2 bg-amber-50 hover:bg-amber-100/80 text-amber-800 border border-amber-200/90 rounded-xl text-xs font-semibold shadow-xs transition active:scale-95 cursor-pointer shrink-0"
+              title="ล้างข้อความค้นหาและตัวกรองสินค้าทั้งหมด"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>รีเซ็ตตัวกรอง</span>
+            </button>
+          )}
         </div>
 
         {/* Category Quick Filter Pills Bar */}
@@ -909,21 +976,33 @@ export const ProductsView: React.FC = () => {
               </div>
 
               {/* Modal Buttons */}
-              <div className="p-4 bg-slate-50 -mx-5 -mb-5 border-t border-slate-200 flex gap-2">
+              <div className="p-4 bg-slate-50 -mx-5 -mb-5 border-t border-slate-200 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5">
                 <button
                   type="button"
-                  onClick={() => setIsModalOpen(false)}
-                  className="flex-1 py-2.5 rounded-xl border border-slate-300 text-xs md:text-sm font-semibold text-slate-600 hover:bg-slate-100 transition"
+                  onClick={() => setIsResetFormModalOpen(true)}
+                  className="flex items-center justify-center gap-1.5 px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white hover:bg-amber-50 text-slate-600 hover:text-amber-800 text-xs font-semibold transition cursor-pointer"
+                  title="ล้างข้อมูลที่กำลังกรอกในแบบฟอร์ม"
                 >
-                  ยกเลิก
+                  <RotateCcw className="w-3.5 h-3.5 text-slate-400 group-hover:text-amber-600" />
+                  <span>รีเซ็ตฟอร์ม</span>
                 </button>
-                <button
-                  type="submit"
-                  disabled={isSubmitting}
-                  className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs md:text-sm font-bold shadow-md transition disabled:opacity-50"
-                >
-                  {isSubmitting ? 'กำลังบันทึก...' : 'บันทึกสินค้าลงฐานข้อมูล'}
-                </button>
+
+                <div className="flex items-center gap-2 flex-1 sm:flex-initial">
+                  <button
+                    type="button"
+                    onClick={() => setIsModalOpen(false)}
+                    className="flex-1 sm:flex-initial px-4 py-2.5 rounded-xl border border-slate-300 text-xs md:text-sm font-semibold text-slate-600 hover:bg-slate-100 transition cursor-pointer"
+                  >
+                    ยกเลิก
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSubmitting}
+                    className="flex-1 sm:flex-initial px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs md:text-sm font-bold shadow-md transition disabled:opacity-50 cursor-pointer"
+                  >
+                    {isSubmitting ? 'กำลังบันทึก...' : 'บันทึกสินค้าลงฐานข้อมูล'}
+                  </button>
+                </div>
               </div>
             </form>
           </div>
@@ -984,6 +1063,30 @@ export const ProductsView: React.FC = () => {
           setFormData((prev) => ({ ...prev, categoryId: newCat.id }));
           setSelectedCategory(newCat.id);
         }}
+      />
+
+      {/* RESET FILTERS & SEARCH MODAL */}
+      <ResetConfirmModal
+        isOpen={isResetFiltersModalOpen}
+        onClose={() => setIsResetFiltersModalOpen(false)}
+        onConfirm={handleResetFilters}
+        title="ยืนยันการรีเซ็ตตัวกรอง"
+        description="คุณต้องการล้างคำค้นหาและคืนค่าตัวกรองหมวดหมู่และสถานะสต็อกเป็นค่าเริ่มต้นใช่หรือไม่?"
+        confirmLabel="ยืนยันรีเซ็ตตัวกรอง"
+      />
+
+      {/* RESET PRODUCT FORM MODAL */}
+      <ResetConfirmModal
+        isOpen={isResetFormModalOpen}
+        onClose={() => setIsResetFormModalOpen(false)}
+        onConfirm={handleResetForm}
+        title="ยืนยันการรีเซ็ตฟอร์มสินค้า"
+        description={
+          editingProduct
+            ? `คุณต้องการยกเลิกการแก้ไขและคืนค่าข้อมูลของสินค้า "${editingProduct.name}" กลับเป็นข้อมูลเดิมใช่หรือไม่? (ข้อมูลที่บันทึกไว้ในระบบจะไม่สูญหาย)`
+            : 'คุณต้องการล้างข้อมูลที่กำลังกรอกในแบบฟอร์มเพื่อเริ่มต้นกรอกใหม่ใช่หรือไม่?'
+        }
+        confirmLabel="ยืนยันรีเซ็ตฟอร์ม"
       />
     </div>
   );

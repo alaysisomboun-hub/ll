@@ -35,6 +35,7 @@ import { Product, Customer, Sale } from '../../types/pos';
 import { formatCurrency, formatNumber, formatDateTime } from '../../utils/formatters';
 import { ReceiptModal } from './ReceiptModal';
 import { CameraBarcodeScannerModal } from '../common/CameraBarcodeScannerModal';
+import { ResetConfirmModal } from '../common/ResetConfirmModal';
 import { playScanSuccessSound, playScanErrorSound } from '../../utils/audio';
 
 export const POSView: React.FC = () => {
@@ -112,6 +113,34 @@ export const POSView: React.FC = () => {
   // Customer Picker Modal
   const [isCustomerModalOpen, setIsCustomerModalOpen] = useState<boolean>(false);
   const [customerSearch, setCustomerSearch] = useState<string>('');
+
+  // Reset Modals State
+  const [isResetPOSModalOpen, setIsResetPOSModalOpen] = useState<boolean>(false);
+  const [isResetCartModalOpen, setIsResetCartModalOpen] = useState<boolean>(false);
+
+  // Full POS Terminal Reset
+  const handleResetPOS = () => {
+    clearCart();
+    setSelectedCustomer(null);
+    setBillDiscountPercent(0);
+    setBillDiscountAmount(0);
+    setPosMode('retail');
+    setSearchQuery('');
+    setBarcodeInput('');
+    setSelectedCategory('all');
+    setScanQuantity(1);
+    setLastScannedFeedback(null);
+    showToast('รีเซ็ตหน้าขาย POS และตะกร้าเป็นสถานะเริ่มต้นเรียบร้อยแล้ว', 'success');
+  };
+
+  // Cart / Bill Reset only
+  const handleResetCart = () => {
+    clearCart();
+    setSelectedCustomer(null);
+    setBillDiscountPercent(0);
+    setBillDiscountAmount(0);
+    showToast('รีเซ็ตสินค้าในตะกร้าและส่วนลดเรียบร้อยแล้ว', 'info');
+  };
 
   const barcodeInputRef = useRef<HTMLInputElement>(null);
 
@@ -404,31 +433,45 @@ export const POSView: React.FC = () => {
           </button>
         </div>
 
-        {/* Wholesale vs Retail Toggle */}
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-medium text-slate-500 hidden sm:inline">ประเภทราคา:</span>
-          <div className="inline-flex bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs font-bold">
-            <button
-              onClick={() => setPosMode('retail')}
-              className={`px-3 py-1.5 rounded-lg transition ${
-                posMode === 'retail'
-                  ? 'bg-white text-blue-700 shadow-xs border border-slate-200/60'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              🛒 ราคาปลีก (Retail)
-            </button>
-            <button
-              onClick={() => setPosMode('wholesale')}
-              className={`px-3 py-1.5 rounded-lg transition ${
-                posMode === 'wholesale'
-                  ? 'bg-emerald-600 text-white shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              📦 ราคาส่ง (Wholesale)
-            </button>
+        {/* Wholesale vs Retail Toggle & Reset POS Terminal Button */}
+        <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-medium text-slate-500 hidden sm:inline">ประเภทราคา:</span>
+            <div className="inline-flex bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs font-bold">
+              <button
+                onClick={() => setPosMode('retail')}
+                className={`px-3 py-1.5 rounded-lg transition cursor-pointer ${
+                  posMode === 'retail'
+                    ? 'bg-white text-blue-700 shadow-xs border border-slate-200/60'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                🛒 ราคาปลีก (Retail)
+              </button>
+              <button
+                onClick={() => setPosMode('wholesale')}
+                className={`px-3 py-1.5 rounded-lg transition cursor-pointer ${
+                  posMode === 'wholesale'
+                    ? 'bg-emerald-600 text-white shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                📦 ราคาส่ง (Wholesale)
+              </button>
+            </div>
           </div>
+
+          {/* Reset POS Button */}
+          <button
+            type="button"
+            onClick={() => setIsResetPOSModalOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-2 bg-white hover:bg-amber-50 text-slate-600 hover:text-amber-800 border border-slate-200/90 hover:border-amber-200 rounded-xl text-xs font-semibold shadow-xs transition active:scale-95 cursor-pointer"
+            title="รีเซ็ตหน้าขาย POS กลับสู่สถานะเริ่มต้น"
+          >
+            <RotateCcw className="w-3.5 h-3.5 text-slate-400 group-hover:text-amber-600" />
+            <span className="hidden sm:inline">รีเซ็ตหน้าขาย</span>
+            <span className="sm:hidden">รีเซ็ต</span>
+          </button>
         </div>
       </div>
 
@@ -770,13 +813,15 @@ export const POSView: React.FC = () => {
               <span className="font-semibold text-slate-700">
                 ตะกร้า ({cart.length} รายการ / {cartTotals.itemCount} ชิ้น)
               </span>
-              {cart.length > 0 && (
+              {(cart.length > 0 || selectedCustomer || billDiscountPercent > 0 || billDiscountAmount > 0) && (
                 <button
-                  onClick={clearCart}
-                  className="text-red-500 hover:text-red-700 font-medium flex items-center gap-1"
+                  type="button"
+                  onClick={() => setIsResetCartModalOpen(true)}
+                  className="text-slate-500 hover:text-amber-700 font-semibold flex items-center gap-1 px-2 py-0.5 rounded-lg hover:bg-amber-50 border border-transparent hover:border-amber-200 transition cursor-pointer"
+                  title="รีเซ็ตสินค้าในตะกร้าและส่วนลดบิลนี้"
                 >
-                  <Trash2 className="w-3.5 h-3.5" />
-                  ล้างตะกร้า
+                  <RotateCcw className="w-3.5 h-3.5 text-slate-400 group-hover:text-amber-600" />
+                  <span>รีเซ็ตบิล</span>
                 </button>
               )}
             </div>
@@ -1593,6 +1638,36 @@ export const POSView: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* RESET POS TERMINAL CONFIRMATION MODAL */}
+      <ResetConfirmModal
+        isOpen={isResetPOSModalOpen}
+        onClose={() => setIsResetPOSModalOpen(false)}
+        onConfirm={handleResetPOS}
+        title="ยืนยันการรีเซ็ตหน้าขาย POS"
+        description="คุณต้องการรีเซ็ตหน้าขาย POS กลับสู่สถานะเริ่มต้นหรือไม่? รายการสินค้าในตะกร้า ส่วนลด และลูกค้าที่เลือกจะถูกล้าง (ประวัติการขายในระบบจะไม่ถูกลบ)"
+        detailBadge={
+          cart.length > 0
+            ? `สินค้าในตะกร้า ${cart.length} รายการ (${cartTotals.itemCount} ชิ้น) จะถูกล้าง`
+            : undefined
+        }
+        confirmLabel="ยืนยันรีเซ็ตหน้าขาย"
+      />
+
+      {/* RESET CART / BILL CONFIRMATION MODAL */}
+      <ResetConfirmModal
+        isOpen={isResetCartModalOpen}
+        onClose={() => setIsResetCartModalOpen(false)}
+        onConfirm={handleResetCart}
+        title="ยืนยันการรีเซ็ตตะกร้าสินค้า"
+        description="คุณต้องการล้างสินค้าทั้งหมดในตะกร้า และรีเซ็ตส่วนลดบิลนี้ใช่หรือไม่?"
+        detailBadge={
+          cart.length > 0
+            ? `สินค้าในตะกร้า ${cart.length} รายการ (${cartTotals.itemCount} ชิ้น)`
+            : undefined
+        }
+        confirmLabel="ยืนยันล้างตะกร้า"
+      />
     </div>
   );
 };

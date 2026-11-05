@@ -14,11 +14,13 @@ import {
   Server,
   RefreshCw,
   ShieldCheck,
+  RotateCcw,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { StoreSettings } from '../../types/pos';
 import { Language } from '../../utils/translations';
 import { testConnection } from '../../firebase';
+import { ResetConfirmModal } from '../common/ResetConfirmModal';
 import firebaseConfig from '../../../firebase-applet-config.json';
 
 export const SettingsView: React.FC = () => {
@@ -37,6 +39,13 @@ export const SettingsView: React.FC = () => {
   const [formData, setFormData] = useState<StoreSettings>({ ...settings });
   const [isSaving, setIsSaving] = useState<boolean>(false);
   const [isTestingFirebase, setIsTestingFirebase] = useState<boolean>(false);
+  const [isResetSettingsModalOpen, setIsResetSettingsModalOpen] = useState<boolean>(false);
+
+  // Reset form to latest saved settings in database
+  const handleResetSettings = () => {
+    setFormData({ ...settings });
+    showToast('รีเซ็ตข้อมูลในแบบฟอร์มการตั้งค่ากลับสู่ค่าที่บันทึกไว้ล่าสุดแล้ว', 'info');
+  };
 
   const handleTestFirebase = async () => {
     setIsTestingFirebase(true);
@@ -73,14 +82,25 @@ export const SettingsView: React.FC = () => {
           </p>
         </div>
 
-        <button
-          onClick={handleSave}
-          disabled={isSaving}
-          className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white text-xs md:text-sm font-bold rounded-xl shadow-xs transition disabled:opacity-50"
-        >
-          <Save className="w-4 h-4" />
-          {isSaving ? 'กำลังบันทึก...' : 'บันทึกการตั้งค่า'}
-        </button>
+        <div className="flex flex-wrap items-center gap-2.5">
+          <button
+            type="button"
+            onClick={() => setIsResetSettingsModalOpen(true)}
+            className="flex items-center gap-2 px-4 py-2.5 bg-white hover:bg-amber-50 text-slate-700 hover:text-amber-800 border border-slate-200/90 hover:border-amber-300 text-xs md:text-sm font-semibold rounded-xl shadow-xs transition active:scale-95 cursor-pointer"
+            title="คืนค่าการตั้งค่าหน้าจอและแบบฟอร์มเป็นค่าเริ่มต้น"
+          >
+            <RotateCcw className="w-4 h-4 text-slate-400 group-hover:text-amber-600" />
+            <span>รีเซ็ตการตั้งค่า</span>
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={isSaving}
+            className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white text-xs md:text-sm font-bold rounded-xl shadow-xs transition disabled:opacity-50 cursor-pointer"
+          >
+            <Save className="w-4 h-4" />
+            {isSaving ? 'กำลังบันทึก...' : 'บันทึกการตั้งค่า'}
+          </button>
+        </div>
       </div>
 
       <form onSubmit={handleSave} className="space-y-6">
@@ -374,6 +394,16 @@ export const SettingsView: React.FC = () => {
           </div>
         </div>
       </form>
+
+      {/* RESET SETTINGS CONFIRMATION MODAL */}
+      <ResetConfirmModal
+        isOpen={isResetSettingsModalOpen}
+        onClose={() => setIsResetSettingsModalOpen(false)}
+        onConfirm={handleResetSettings}
+        title="ยืนยันการรีเซ็ต"
+        description="คุณต้องการรีเซ็ตข้อมูลที่กำลังใช้งานหรือไม่? ข้อมูลที่ยังไม่ได้บันทึกอาจสูญหาย"
+        confirmLabel="ยืนยันรีเซ็ต"
+      />
     </div>
   );
 };

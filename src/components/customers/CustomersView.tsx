@@ -14,6 +14,7 @@ import {
   Banknote,
   QrCode,
   AlertCircle,
+  RotateCcw,
 } from 'lucide-react';
 import {
   collection,
@@ -26,6 +27,7 @@ import { db, handleFirestoreError, OperationType } from '../../firebase';
 import { useApp } from '../../context/AppContext';
 import { Customer } from '../../types/pos';
 import { formatCurrency, formatDateTime } from '../../utils/formatters';
+import { ResetConfirmModal } from '../common/ResetConfirmModal';
 
 export const CustomersView: React.FC = () => {
   const {
@@ -51,6 +53,30 @@ export const CustomersView: React.FC = () => {
     creditLimit: 0,
     notes: '',
   });
+  const [isResetFormModalOpen, setIsResetFormModalOpen] = useState<boolean>(false);
+
+  const handleResetCustomerForm = () => {
+    if (editingCustomer) {
+      setFormData({
+        name: editingCustomer.name || '',
+        phone: editingCustomer.phone || '',
+        type: editingCustomer.type || 'wholesale',
+        address: editingCustomer.address || '',
+        creditLimit: editingCustomer.creditLimit || 0,
+        notes: editingCustomer.notes || '',
+      });
+    } else {
+      setFormData({
+        name: '',
+        phone: '',
+        type: 'wholesale',
+        address: '',
+        creditLimit: 20000,
+        notes: '',
+      });
+    }
+    showToast('รีเซ็ตฟอร์มข้อมูลลูกค้าเรียบร้อยแล้ว', 'info');
+  };
 
   // Debt Payment Modal
   const [debtPaymentCustomer, setDebtPaymentCustomer] = useState<Customer | null>(null);
@@ -275,6 +301,23 @@ export const CustomersView: React.FC = () => {
             </button>
           ))}
         </div>
+
+        {/* Reset Filter Button */}
+        {(search !== '' || typeFilter !== 'all') && (
+          <button
+            type="button"
+            onClick={() => {
+              setSearch('');
+              setTypeFilter('all');
+              showToast('รีเซ็ตการค้นหาและตัวกรองลูกค้าแล้ว', 'info');
+            }}
+            className="flex items-center gap-1.5 px-3 py-2 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200/80 rounded-xl text-xs font-semibold shadow-xs transition active:scale-95 cursor-pointer shrink-0"
+            title="รีเซ็ตการค้นหาและตัวกรองลูกค้า"
+          >
+            <RotateCcw className="w-3.5 h-3.5 text-amber-700" />
+            <span>รีเซ็ตตัวกรอง</span>
+          </button>
+        )}
       </div>
 
       {/* Customers Table */}
@@ -480,17 +523,27 @@ export const CustomersView: React.FC = () => {
                 />
               </div>
 
-              <div className="pt-2 flex gap-2">
+              <div className="pt-2 flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsResetFormModalOpen(true)}
+                  className="flex items-center gap-1 px-3 py-2.5 rounded-xl border border-amber-200 bg-amber-50 hover:bg-amber-100 text-amber-800 text-xs font-semibold transition active:scale-95 cursor-pointer"
+                  title="รีเซ็ตค่าในฟอร์ม"
+                >
+                  <RotateCcw className="w-3.5 h-3.5 text-amber-700" />
+                  <span>รีเซ็ตฟอร์ม</span>
+                </button>
+                <div className="flex-1" />
                 <button
                   type="button"
                   onClick={() => setIsModalOpen(false)}
-                  className="flex-1 py-2.5 rounded-xl border border-slate-300 text-xs font-semibold text-slate-600 hover:bg-slate-100"
+                  className="px-4 py-2.5 rounded-xl border border-slate-300 text-xs font-semibold text-slate-600 hover:bg-slate-100 transition"
                 >
                   ยกเลิก
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-xs"
+                  className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white text-xs font-bold rounded-xl shadow-xs transition"
                 >
                   บันทึกข้อมูล
                 </button>
@@ -683,6 +736,17 @@ export const CustomersView: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Confirmation Modal for Form Reset */}
+      <ResetConfirmModal
+        isOpen={isResetFormModalOpen}
+        onClose={() => setIsResetFormModalOpen(false)}
+        onConfirm={handleResetCustomerForm}
+        title="ยืนยันการรีเซ็ตฟอร์มข้อมูลลูกค้า"
+        description="คุณต้องการล้างข้อมูลที่กำลังกรอกในฟอร์มนี้หรือไม่? ข้อมูลที่แก้ไขจะกลับสู่ค่าเดิม"
+        detailBadge="ข้อมูลลูกค้าในระบบจะไม่ถูกลบ"
+        confirmLabel="ยืนยันรีเซ็ตฟอร์ม"
+      />
     </div>
   );
 };

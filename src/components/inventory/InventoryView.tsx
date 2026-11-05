@@ -12,6 +12,7 @@ import {
   Layers,
   X,
   Plus,
+  RotateCcw,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { Product, InventoryTransactionType } from '../../types/pos';
@@ -224,15 +225,33 @@ export const InventoryView: React.FC = () => {
           </div>
 
           {/* Search bar inside tab */}
-          <div className="relative sm:w-72">
-            <Search className="absolute left-3 top-2.5 w-4 h-4 text-slate-400" />
-            <input
-              type="text"
-              placeholder="ค้นหาชื่อ, รหัส หรือเลขอ้างอิง..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="w-full pl-9 pr-3 py-2 text-xs bg-white border border-slate-200 rounded-xl focus:outline-hidden"
-            />
+          <div className="flex items-center gap-2">
+            <div className="relative sm:w-72">
+              <Search className="absolute left-3 top-2.5 w-4 h-4 text-slate-400" />
+              <input
+                type="text"
+                placeholder="ค้นหาชื่อ, รหัส หรือเลขอ้างอิง..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="w-full pl-9 pr-3 py-2 text-xs bg-white border border-slate-200 rounded-xl focus:outline-hidden"
+              />
+            </div>
+
+            {(search !== '' || (activeTab === 'transactions' && filterType !== 'all')) && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSearch('');
+                  setFilterType('all');
+                  showToast('รีเซ็ตการค้นหาและตัวกรองสต็อกแล้ว', 'info');
+                }}
+                className="flex items-center gap-1.5 px-3 py-2 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200/80 rounded-xl text-xs font-semibold shadow-xs transition active:scale-95 cursor-pointer shrink-0"
+                title="รีเซ็ตการค้นหาและตัวกรอง"
+              >
+                <RotateCcw className="w-3.5 h-3.5 text-amber-700" />
+                <span>รีเซ็ต</span>
+              </button>
+            )}
           </div>
         </div>
 
@@ -523,18 +542,43 @@ export const InventoryView: React.FC = () => {
                 />
               </div>
 
-              <div className="pt-2 flex gap-2">
+              <div className="pt-2 flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (actionModal === 'adjust') {
+                      setInputQty(targetProduct?.stockQty || 0);
+                    } else {
+                      setInputQty(10);
+                    }
+                    setActionReason(
+                      actionModal === 'in'
+                        ? 'รับสินค้าเข้าคลังสินค้า'
+                        : actionModal === 'out'
+                        ? 'สินค้าชำรุดเสียหาย'
+                        : 'ตรวจนับสต็อกประจำงวด'
+                    );
+                    setReferenceDoc('');
+                    showToast('รีเซ็ตฟอร์มเป็นค่าเริ่มต้นแล้ว', 'info');
+                  }}
+                  className="flex items-center gap-1 px-3 py-2.5 rounded-xl border border-amber-200 bg-amber-50 hover:bg-amber-100 text-amber-800 text-xs font-semibold transition active:scale-95 cursor-pointer"
+                  title="รีเซ็ตฟอร์มเป็นค่าเริ่มต้น"
+                >
+                  <RotateCcw className="w-3.5 h-3.5 text-amber-700" />
+                  <span>รีเซ็ตฟอร์ม</span>
+                </button>
+                <div className="flex-1" />
                 <button
                   type="button"
                   onClick={() => setActionModal(null)}
-                  className="flex-1 py-2.5 rounded-xl border border-slate-300 text-xs font-semibold text-slate-600 hover:bg-slate-100"
+                  className="px-4 py-2.5 rounded-xl border border-slate-300 text-xs font-semibold text-slate-600 hover:bg-slate-100 transition"
                 >
                   ยกเลิก
                 </button>
                 <button
                   type="submit"
                   disabled={isSubmitting}
-                  className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-xs disabled:opacity-50"
+                  className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white text-xs font-bold rounded-xl shadow-xs disabled:opacity-50 transition"
                 >
                   {isSubmitting ? 'กำลังบันทึก...' : 'บันทึกการปรับสต็อก'}
                 </button>
