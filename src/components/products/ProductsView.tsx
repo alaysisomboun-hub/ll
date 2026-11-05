@@ -289,18 +289,21 @@ export const ProductsView: React.FC = () => {
         </button>
       </div>
 
-      {/* กล่องสแกนบาร์โค้ดเพิ่มสินค้าและตรวจสอบสต็อก (Barcode Quick Scanner) */}
-      <div className="bg-gradient-to-r from-slate-900 via-blue-950 to-indigo-950 text-white p-4 rounded-2xl border border-blue-800/40 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-3">
+      {/* กล่องสแกนบาร์โค้ดเพิ่มสินค้าและตรวจสอบสต็อก (Barcode Quick Scanner) - Clean Minimalist */}
+      <div className="bg-white p-4 rounded-2xl border border-slate-200/90 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-3">
         <div className="flex items-center gap-2.5">
-          <div className="w-10 h-10 rounded-xl bg-blue-500/20 text-blue-400 flex items-center justify-center shrink-0 border border-blue-400/30">
+          <div className="w-9 h-9 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0 border border-blue-100">
             <Barcode className="w-5 h-5" />
           </div>
           <div>
-            <h3 className="font-bold text-xs sm:text-sm text-white flex items-center gap-2">
+            <h3 className="font-semibold text-xs sm:text-sm text-slate-900 flex items-center gap-2">
               <span>กล่องสแกนบาร์โค้ดสินค้า (Barcode Quick Scanner)</span>
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200/60">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                พร้อมสแกน
+              </span>
             </h3>
-            <p className="text-[11px] text-blue-200/80">
+            <p className="text-[11px] text-slate-400">
               ยิงบาร์โค้ดเพื่อค้นหา/แก้ไขสินค้าทันที หากยังไม่มีรหัสนี้ในระบบจะเปิดฟอร์มเพิ่มสินค้าใหม่ให้อัตโนมัติ
             </p>
           </div>
@@ -314,17 +317,17 @@ export const ProductsView: React.FC = () => {
             }}
             className="relative flex-1 sm:w-80"
           >
-            <Barcode className="absolute left-3 top-2.5 w-4 h-4 text-blue-400" />
+            <Barcode className="absolute left-3 top-2.5 w-4 h-4 text-slate-400" />
             <input
               type="text"
               placeholder="ยิงบาร์โค้ดหรือพิมพ์รหัสที่นี่..."
               value={scanBarcodeInput}
               onChange={(e) => setScanBarcodeInput(e.target.value)}
-              className="w-full pl-9 pr-20 py-2 text-xs bg-slate-900 border border-blue-400/40 rounded-xl text-white placeholder-blue-200/40 font-mono focus:outline-hidden focus:ring-2 focus:ring-blue-400"
+              className="w-full pl-9 pr-20 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl text-slate-900 placeholder:text-slate-400 font-mono focus:bg-white focus:outline-hidden focus:border-blue-500 focus:ring-3 focus:ring-blue-100 transition"
             />
             <button
               type="submit"
-              className="absolute right-1 top-1 bottom-1 px-2.5 bg-blue-600 hover:bg-blue-500 text-white text-[11px] font-bold rounded-lg transition cursor-pointer"
+              className="absolute right-1 top-1 bottom-1 px-2.5 bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-semibold rounded-lg transition cursor-pointer"
             >
               ค้นหา/เพิ่ม
             </button>
@@ -336,7 +339,7 @@ export const ProductsView: React.FC = () => {
               setCameraModalTarget('search');
               setIsCameraModalOpen(true);
             }}
-            className="flex items-center gap-1.5 px-3 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white rounded-xl text-xs font-bold transition shadow-xs cursor-pointer shrink-0"
+            className="flex items-center gap-1.5 px-3 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-semibold transition shadow-xs cursor-pointer shrink-0"
           >
             <Camera className="w-3.5 h-3.5" />
             <span className="hidden sm:inline">เปิดกล้องสแกน</span>

@@ -277,54 +277,56 @@ export const EmployeesView: React.FC = () => {
         </button>
       </div>
 
-      {/* Staff Invitation Code Banner */}
-      <div className="bg-gradient-to-r from-slate-900 via-blue-950 to-indigo-950 text-white p-5 rounded-2xl shadow-sm border border-blue-900/60 flex flex-col md:flex-row md:items-center justify-between gap-4">
+      {/* Staff Invitation Code Banner - Clean Minimalist */}
+      <div className="bg-white p-5 rounded-2xl border border-slate-200/90 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="space-y-1">
-          <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-blue-300">
-            <Lock className="w-4 h-4 text-amber-400" />
-            <span>รหัสความปลอดภัยสำหรับสมัครสมาชิกพนักงาน (Staff Registration Passcode)</span>
+          <div className="flex items-center gap-2 text-xs font-semibold text-slate-800">
+            <div className="w-6 h-6 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center border border-amber-200/60">
+              <Lock className="w-3.5 h-3.5" />
+            </div>
+            <span>รหัสความปลอดภัยสำหรับสมัครสมาชิกพนักงาน (Staff Passcode)</span>
           </div>
-          <p className="text-xs text-slate-300">
-            ระบบจำกัดให้เฉพาะพนักงานที่ทราบรหัสนี้เท่านั้นที่จะสามารถสมัครสมาชิกเข้าสู่ระบบ POS ได้ (ป้องกันบุคคลภายนอก)
+          <p className="text-xs text-slate-400 pl-8">
+            จำกัดให้เฉพาะพนักงานที่ทราบรหัสนี้เท่านั้นที่จะสามารถสมัครสมาชิกได้ เพื่อป้องกันบุคคลภายนอกเข้าถึงระบบ
           </p>
         </div>
 
-        <div className="flex items-center gap-2 bg-white/10 backdrop-blur-xs p-2 rounded-xl border border-white/15">
+        <div className="flex items-center gap-2 bg-slate-50 p-2 rounded-xl border border-slate-200">
           {editingInviteCode ? (
             <div className="flex items-center gap-2">
               <input
                 type="text"
                 value={newInviteCode}
                 onChange={(e) => setNewInviteCode(e.target.value)}
-                className="px-3 py-1.5 bg-white text-slate-900 font-mono font-bold text-sm rounded-lg focus:outline-hidden w-28 text-center uppercase"
+                className="px-3 py-1.5 bg-white text-slate-900 border border-slate-300 font-mono font-bold text-sm rounded-lg focus:outline-hidden w-28 text-center uppercase"
                 placeholder="POS2026"
               />
               <button
                 onClick={handleSaveInviteCode}
-                className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-bold transition"
+                className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold transition cursor-pointer"
               >
                 บันทึก
               </button>
               <button
                 onClick={() => setEditingInviteCode(false)}
-                className="px-2 py-1.5 text-slate-300 hover:text-white text-xs"
+                className="px-2 py-1.5 text-slate-500 hover:text-slate-800 text-xs cursor-pointer"
               >
                 ยกเลิก
               </button>
             </div>
           ) : (
             <>
-              <div className="px-3 py-1 bg-blue-600/40 rounded-lg border border-blue-400/30">
-                <span className="font-mono font-black text-amber-300 tracking-widest text-sm">
+              <div className="px-3 py-1 bg-white rounded-lg border border-slate-200">
+                <span className="font-mono font-bold text-slate-800 tracking-widest text-sm">
                   {settings.staffInviteCode || 'POS2026'}
                 </span>
               </div>
               <button
                 onClick={copyInviteCode}
-                className="p-1.5 hover:bg-white/10 rounded-lg text-slate-200 transition"
+                className="p-1.5 hover:bg-slate-200/60 rounded-lg text-slate-600 transition cursor-pointer"
                 title="คัดลอกรหัสผ่าน"
               >
-                {copiedCode ? <CheckCheck className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
+                {copiedCode ? <CheckCheck className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
               </button>
               {(currentUser?.role === 'owner' || currentUser?.role === 'admin') && (
                 <button
@@ -332,7 +334,7 @@ export const EmployeesView: React.FC = () => {
                     setNewInviteCode(settings.staffInviteCode || 'POS2026');
                     setEditingInviteCode(true);
                   }}
-                  className="px-2.5 py-1 text-xs text-blue-200 hover:text-white bg-white/5 hover:bg-white/15 rounded-lg transition"
+                  className="px-2.5 py-1 text-xs text-slate-700 hover:text-slate-900 bg-white hover:bg-slate-100 border border-slate-200 rounded-lg transition font-medium cursor-pointer"
                 >
                   แก้ไขรหัส
                 </button>

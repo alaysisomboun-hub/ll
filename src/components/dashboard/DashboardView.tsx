@@ -7,15 +7,11 @@ import {
   Users,
   CreditCard,
   ShoppingCart,
-  PlusCircle,
-  ArrowUpRight,
-  ArrowDownRight,
-  Receipt,
-  Calendar,
   CheckCircle2,
+  ArrowUpRight,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
-import { formatCurrency, formatNumber, formatDateTime } from '../../utils/formatters';
+import { formatCurrency, formatNumber } from '../../utils/formatters';
 
 export const DashboardView: React.FC = () => {
   const {
@@ -26,7 +22,6 @@ export const DashboardView: React.FC = () => {
     currency,
     setActiveTab,
     setPosMode,
-    t,
   } = useApp();
 
   const now = new Date();
@@ -41,7 +36,6 @@ export const DashboardView: React.FC = () => {
     const todaySalesList = validSales.filter((s) => s.createdAt.startsWith(todayStr));
     const todaySales = todaySalesList.reduce((sum, s) => sum + (s.totalAmount || 0), 0);
     const todayCost = todaySalesList.reduce((sum, s) => sum + (s.totalCost || 0), 0);
-    // Explicit Profit calculation: Revenue - Cost
     const todayProfit = todaySales - todayCost;
 
     const monthSalesList = validSales.filter((s) => s.createdAt.startsWith(currentMonthStr));
@@ -124,7 +118,7 @@ export const DashboardView: React.FC = () => {
       .slice(0, 10);
   }, [sales]);
 
-  // Last 7 days sales for simple bar visualization
+  // Last 7 days sales for visualization
   const last7DaysData = useMemo(() => {
     const days: { dateLabel: string; dateStr: string; amount: number; profit: number }[] = [];
     for (let i = 6; i >= 0; i--) {
@@ -148,42 +142,46 @@ export const DashboardView: React.FC = () => {
   const maxDailyAmount = Math.max(...last7DaysData.map((d) => d.amount), 1000);
 
   return (
-    <div className="p-4 md:p-6 space-y-6 max-w-7xl mx-auto">
-      {/* Quick Action Top Bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-gradient-to-r from-blue-900 to-indigo-900 text-white p-5 rounded-2xl shadow-md">
+    <div className="p-4 md:p-6 lg:p-8 space-y-6 max-w-7xl mx-auto">
+      {/* Top Action Header (Clean & Minimal) */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs">
         <div>
-          <h2 className="text-xl font-bold">ระบบ POS ค้าส่งและค้าปลีก</h2>
-          <p className="text-blue-200 text-xs md:text-sm mt-0.5">
-            ภาพรวมการขาย สินค้าคงคลัง และผลกำไรประจำวัน
+          <h2 className="text-lg md:text-xl font-bold text-slate-900 tracking-tight">
+            ภาพรวมร้านค้าและยอดขาย
+          </h2>
+          <p className="text-xs text-slate-500 mt-0.5">
+            สรุปข้อมูลยอดขาย กำไร และสถานะสินค้าคงคลังแบบเรียลไทม์
           </p>
         </div>
-        <div className="flex flex-wrap gap-2.5">
+        <div className="flex flex-wrap items-center gap-2">
           <button
+            type="button"
             onClick={() => {
               setPosMode('retail');
               setActiveTab('pos');
             }}
-            className="flex items-center gap-1.5 px-3.5 py-2 bg-blue-600 hover:bg-blue-500 rounded-xl text-xs md:text-sm font-semibold transition shadow-sm active:scale-95"
+            className="flex items-center gap-1.5 px-3.5 py-2 bg-blue-600 hover:bg-blue-700 active:scale-98 text-white rounded-xl text-xs font-semibold transition-colors shadow-xs cursor-pointer"
           >
             <ShoppingCart className="w-4 h-4" />
-            เปิดการขายปลีก
+            <span>เปิดการขายปลีก</span>
           </button>
           <button
+            type="button"
             onClick={() => {
               setPosMode('wholesale');
               setActiveTab('pos');
             }}
-            className="flex items-center gap-1.5 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-xl text-xs md:text-sm font-semibold transition shadow-sm active:scale-95"
-          >
-            <ShoppingCart className="w-4 h-4" />
-            เปิดการขายส่ง (Wholesale)
-          </button>
-          <button
-            onClick={() => setActiveTab('inventory')}
-            className="flex items-center gap-1.5 px-3 py-2 bg-white/10 hover:bg-white/20 rounded-xl text-xs md:text-sm font-semibold transition"
+            className="flex items-center gap-1.5 px-3.5 py-2 bg-slate-900 hover:bg-slate-800 active:scale-98 text-white rounded-xl text-xs font-semibold transition-colors shadow-xs cursor-pointer"
           >
             <Package className="w-4 h-4" />
-            รับสินค้าเข้าสต็อก
+            <span>เปิดการขายส่ง</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('inventory')}
+            className="flex items-center gap-1.5 px-3.5 py-2 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 rounded-xl text-xs font-semibold transition-colors cursor-pointer"
+          >
+            <span>รับสินค้าเข้าสต็อก</span>
           </button>
         </div>
       </div>
@@ -191,198 +189,179 @@ export const DashboardView: React.FC = () => {
       {/* KPI Stat Cards (4 columns) */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* Today's Sales */}
-        <div className="bg-white p-5 rounded-2xl border border-slate-200/90 shadow-xs hover:shadow-md transition">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">ยอดขายวันนี้</span>
-            <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center">
-              <TrendingUp className="w-5 h-5" />
-            </div>
+        <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs">
+          <div className="flex items-center justify-between text-slate-500">
+            <span className="text-xs font-medium">ยอดขายวันนี้</span>
+            <TrendingUp className="w-4 h-4 text-slate-400" />
           </div>
-          <p className="text-2xl font-bold text-slate-800 mt-2">
+          <p className="text-2xl font-bold text-slate-900 mt-2 font-mono tabular-nums tracking-tight">
             {formatCurrency(metrics.todaySales, currency)}
           </p>
-          <div className="flex items-center justify-between text-xs mt-2 text-slate-500">
-            <span>{metrics.todayOrdersCount} บิลขาย</span>
-            <span className="text-emerald-600 font-medium">กำไร: {formatCurrency(metrics.todayProfit, currency)}</span>
+          <div className="flex items-center justify-between text-xs mt-2 text-slate-500 pt-2 border-t border-slate-100">
+            <span>{metrics.todayOrdersCount} รายการบิล</span>
+            <span className="text-emerald-600 font-medium font-mono tabular-nums">
+              กำไร: {formatCurrency(metrics.todayProfit, currency)}
+            </span>
           </div>
         </div>
 
         {/* Month's Sales */}
-        <div className="bg-white p-5 rounded-2xl border border-slate-200/90 shadow-xs hover:shadow-md transition">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">ยอดขายเดือนนี้</span>
-            <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
-              <DollarSign className="w-5 h-5" />
-            </div>
+        <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs">
+          <div className="flex items-center justify-between text-slate-500">
+            <span className="text-xs font-medium">ยอดขายเดือนนี้</span>
+            <DollarSign className="w-4 h-4 text-slate-400" />
           </div>
-          <p className="text-2xl font-bold text-slate-800 mt-2">
+          <p className="text-2xl font-bold text-slate-900 mt-2 font-mono tabular-nums tracking-tight">
             {formatCurrency(metrics.monthSales, currency)}
           </p>
-          <div className="flex items-center justify-between text-xs mt-2 text-slate-500">
+          <div className="flex items-center justify-between text-xs mt-2 text-slate-500 pt-2 border-t border-slate-100">
             <span>กำไรขั้นต้น:</span>
-            <span className="text-emerald-600 font-bold">{formatCurrency(metrics.monthProfit, currency)}</span>
+            <span className="text-emerald-600 font-medium font-mono tabular-nums">
+              {formatCurrency(metrics.monthProfit, currency)}
+            </span>
           </div>
         </div>
 
-        {/* Net Profit (Gross Profit - Expenses) */}
-        <div className="bg-white p-5 rounded-2xl border border-slate-200/90 shadow-xs hover:shadow-md transition">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">กำไรสุทธิเดือนนี้</span>
-            <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
-              <CheckCircle2 className="w-5 h-5" />
-            </div>
+        {/* Net Profit */}
+        <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs">
+          <div className="flex items-center justify-between text-slate-500">
+            <span className="text-xs font-medium">กำไรสุทธิเดือนนี้</span>
+            <CheckCircle2 className="w-4 h-4 text-slate-400" />
           </div>
-          <p className="text-2xl font-bold text-indigo-700 mt-2">
+          <p className="text-2xl font-bold text-blue-700 mt-2 font-mono tabular-nums tracking-tight">
             {formatCurrency(metrics.netMonthProfit, currency)}
           </p>
-          <div className="flex items-center justify-between text-xs mt-2 text-slate-500">
+          <div className="flex items-center justify-between text-xs mt-2 text-slate-500 pt-2 border-t border-slate-100">
             <span>หักรายจ่าย:</span>
-            <span className="text-red-500 font-medium">-{formatCurrency(metrics.monthExpensesTotal, currency)}</span>
+            <span className="text-red-500 font-medium font-mono tabular-nums">
+              -{formatCurrency(metrics.monthExpensesTotal, currency)}
+            </span>
           </div>
         </div>
 
-        {/* Outstanding Debts / Accounts Receivable */}
-        <div className="bg-white p-5 rounded-2xl border border-slate-200/90 shadow-xs hover:shadow-md transition">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">ยอดหนี้ค้างชำระ (ลูกหนี้)</span>
-            <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center">
-              <CreditCard className="w-5 h-5" />
-            </div>
+        {/* Receivables */}
+        <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs">
+          <div className="flex items-center justify-between text-slate-500">
+            <span className="text-xs font-medium">ลูกหนี้ค้างชำระ</span>
+            <CreditCard className="w-4 h-4 text-slate-400" />
           </div>
-          <p className="text-2xl font-bold text-amber-600 mt-2">
+          <p className="text-2xl font-bold text-amber-600 mt-2 font-mono tabular-nums tracking-tight">
             {formatCurrency(metrics.totalOutstandingDebt, currency)}
           </p>
-          <div className="flex items-center justify-between text-xs mt-2 text-slate-500">
-            <span>ลูกค้าทั้งหมด: {metrics.totalCustomers} ราย</span>
+          <div className="flex items-center justify-between text-xs mt-2 text-slate-500 pt-2 border-t border-slate-100">
+            <span>ลูกค้า: {metrics.totalCustomers} ราย</span>
             <button
+              type="button"
               onClick={() => setActiveTab('customers')}
-              className="text-blue-600 hover:underline font-medium"
+              className="text-blue-600 hover:text-blue-700 font-medium cursor-pointer"
             >
-              ดูรายการหนี้
+              ดูรายการ
             </button>
           </div>
         </div>
       </div>
 
-      {/* Secondary Quick Stats Row */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 flex items-center gap-3">
-          <div className="w-10 h-10 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center shrink-0">
-            <Package className="w-5 h-5" />
-          </div>
-          <div>
-            <p className="text-xs text-slate-500">สินค้าในระบบ</p>
-            <p className="text-lg font-bold text-slate-800">{metrics.totalProducts} รายการ</p>
-          </div>
+      {/* Secondary Metric Bar */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div className="bg-white p-3.5 rounded-xl border border-slate-200/70 flex items-center justify-between">
+          <span className="text-xs text-slate-500">สินค้าในระบบทั้งหมด</span>
+          <span className="text-sm font-bold text-slate-800 font-mono tabular-nums">
+            {metrics.totalProducts} รายการ
+          </span>
         </div>
-
-        <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 flex items-center gap-3">
-          <div className="w-10 h-10 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center shrink-0">
-            <AlertTriangle className="w-5 h-5" />
-          </div>
-          <div>
-            <p className="text-xs text-slate-500">สินค้าใกล้หมด</p>
-            <p className="text-lg font-bold text-amber-600">{metrics.lowStockCount} รายการ</p>
-          </div>
+        <div className="bg-white p-3.5 rounded-xl border border-slate-200/70 flex items-center justify-between">
+          <span className="text-xs text-slate-500">สินค้าใกล้หมดสต็อก</span>
+          <span className="text-sm font-bold text-amber-600 font-mono tabular-nums">
+            {metrics.lowStockCount} รายการ
+          </span>
         </div>
-
-        <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 flex items-center gap-3">
-          <div className="w-10 h-10 rounded-lg bg-red-100 text-red-700 flex items-center justify-center shrink-0">
-            <AlertTriangle className="w-5 h-5" />
-          </div>
-          <div>
-            <p className="text-xs text-slate-500">สินค้าหมดสต็อก</p>
-            <p className="text-lg font-bold text-red-600">{metrics.outOfStockCount} รายการ</p>
-          </div>
+        <div className="bg-white p-3.5 rounded-xl border border-slate-200/70 flex items-center justify-between">
+          <span className="text-xs text-slate-500">สินค้าหมดสต็อก</span>
+          <span className="text-sm font-bold text-red-600 font-mono tabular-nums">
+            {metrics.outOfStockCount} รายการ
+          </span>
         </div>
-
-        <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 flex items-center gap-3">
-          <div className="w-10 h-10 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
-            <Users className="w-5 h-5" />
-          </div>
-          <div>
-            <p className="text-xs text-slate-500">ฐานข้อมูลลูกค้า</p>
-            <p className="text-lg font-bold text-slate-800">{metrics.totalCustomers} ราย</p>
-          </div>
+        <div className="bg-white p-3.5 rounded-xl border border-slate-200/70 flex items-center justify-between">
+          <span className="text-xs text-slate-500">ฐานข้อมูลลูกค้า</span>
+          <span className="text-sm font-bold text-slate-800 font-mono tabular-nums">
+            {metrics.totalCustomers} ราย
+          </span>
         </div>
       </div>
 
-      {/* Chart Section & Low Stock Alerts */}
+      {/* Chart & Low Stock Section */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Sales Chart (Last 7 Days) */}
-        <div className="lg:col-span-2 bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
+        <div className="lg:col-span-2 bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs flex flex-col justify-between">
           <div className="flex items-center justify-between mb-4">
             <div>
-              <h3 className="font-bold text-slate-800 text-base">ยอดขายย้อนหลัง 7 วัน</h3>
-              <p className="text-xs text-slate-500">เปรียบเทียบยอดขายและผลกำไรในแต่ละวัน</p>
+              <h3 className="font-bold text-slate-900 text-sm md:text-base">แนวโน้มยอดขายย้อนหลัง 7 วัน</h3>
+              <p className="text-xs text-slate-500">เปรียบเทียบยอดขายรวมและกำไรในแต่ละวัน</p>
             </div>
-            <span className="text-xs bg-slate-100 px-2.5 py-1 rounded-md text-slate-600 font-medium">
-              อัปเดตเรียลไทม์
-            </span>
+            <div className="flex items-center gap-4 text-xs">
+              <span className="flex items-center gap-1.5 text-slate-600">
+                <span className="w-2.5 h-2.5 rounded-xs bg-blue-600" />
+                <span>ยอดขาย</span>
+              </span>
+              <span className="flex items-center gap-1.5 text-slate-600">
+                <span className="w-2.5 h-2.5 rounded-xs bg-emerald-500" />
+                <span>กำไร</span>
+              </span>
+            </div>
           </div>
 
           {/* Bar Chart Container */}
-          <div className="h-64 flex items-end gap-2 md:gap-4 pt-6 pb-2 px-2 border-b border-slate-100">
+          <div className="h-60 flex items-end gap-3 md:gap-5 pt-4 pb-2 px-2 border-b border-slate-100">
             {last7DaysData.map((d, idx) => {
               const heightPct = Math.min(100, Math.max(8, (d.amount / maxDailyAmount) * 100));
               const profitPct = d.amount > 0 ? (d.profit / d.amount) * 100 : 0;
               return (
                 <div key={idx} className="flex-1 flex flex-col items-center h-full justify-end group">
-                  <div className="text-[10px] text-slate-500 font-semibold mb-1 opacity-0 group-hover:opacity-100 transition whitespace-nowrap">
+                  <div className="text-[10px] text-slate-500 font-mono tabular-nums mb-1 opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
                     {formatCurrency(d.amount, currency)}
                   </div>
                   <div
-                    className="w-full max-w-[42px] bg-gradient-to-t from-blue-600 to-indigo-500 rounded-t-lg transition-all duration-300 relative group-hover:from-blue-700 group-hover:to-indigo-600 shadow-xs"
+                    className="w-full max-w-[36px] bg-blue-600 rounded-t-md transition-all duration-300 relative group-hover:bg-blue-700"
                     style={{ height: `${heightPct}%` }}
                   >
-                    {/* Inner profit indicator */}
+                    {/* Inner profit bar */}
                     <div
-                      className="absolute bottom-0 left-0 right-0 bg-emerald-500/80 rounded-t-xs"
+                      className="absolute bottom-0 left-0 right-0 bg-emerald-500 rounded-t-xs"
                       style={{ height: `${profitPct}%` }}
                       title={`กำไร: ${formatCurrency(d.profit, currency)}`}
                     />
                   </div>
-                  <span className="text-[11px] text-slate-600 font-medium mt-2 truncate max-w-full">
+                  <span className="text-[11px] text-slate-500 font-medium mt-2 truncate max-w-full">
                     {d.dateLabel}
                   </span>
                 </div>
               );
             })}
           </div>
-
-          <div className="flex items-center justify-center gap-6 mt-4 text-xs">
-            <div className="flex items-center gap-2">
-              <span className="w-3 h-3 rounded-xs bg-blue-600" />
-              <span className="text-slate-600 font-medium">ยอดขายรวม</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="w-3 h-3 rounded-xs bg-emerald-500" />
-              <span className="text-slate-600 font-medium">กำไรจากการขาย</span>
-            </div>
-          </div>
         </div>
 
-        {/* Low Stock Alerts Card */}
-        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex flex-col">
-          <div className="flex items-center justify-between mb-3">
+        {/* Low Stock Alerts */}
+        <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs flex flex-col">
+          <div className="flex items-center justify-between mb-3 pb-2 border-b border-slate-100">
             <div className="flex items-center gap-2">
-              <AlertTriangle className="w-5 h-5 text-amber-500" />
-              <h3 className="font-bold text-slate-800 text-base">สินค้าใกล้หมดสต็อก</h3>
+              <AlertTriangle className="w-4 h-4 text-amber-500" />
+              <h3 className="font-bold text-slate-900 text-sm">สินค้าใกล้หมดสต็อก</h3>
             </div>
             <button
+              type="button"
               onClick={() => setActiveTab('inventory')}
-              className="text-xs text-blue-600 hover:underline font-semibold"
+              className="text-xs text-blue-600 hover:text-blue-700 font-medium cursor-pointer"
             >
-              จัดการสต็อก
+              จัดการคลัง
             </button>
           </div>
 
-          <div className="flex-1 overflow-y-auto max-h-[260px] space-y-2 pr-1 custom-scrollbar">
+          <div className="flex-1 overflow-y-auto max-h-[240px] space-y-2 custom-scrollbar pr-1">
             {metrics.lowStockProducts.length === 0 && metrics.outOfStockCount === 0 ? (
-              <div className="flex flex-col items-center justify-center h-48 text-center text-slate-400">
-                <CheckCircle2 className="w-10 h-10 text-emerald-500 mb-2" />
-                <p className="text-sm font-medium text-slate-600">สต็อกสินค้าอยู่ในเกณฑ์ดี</p>
-                <p className="text-xs">ไม่มีสินค้าใกล้หมดหรือขาดสต็อกในขณะนี้</p>
+              <div className="flex flex-col items-center justify-center h-40 text-center text-slate-400">
+                <CheckCircle2 className="w-8 h-8 text-emerald-500 mb-2" />
+                <p className="text-xs font-medium text-slate-600">สต็อกสินค้าอยู่ในเกณฑ์ดี</p>
+                <p className="text-[11px] text-slate-400">ไม่มีสินค้าใกล้หมดหรือขาดสต็อก</p>
               </div>
             ) : (
               [...metrics.lowStockProducts, ...products.filter((p) => p.stockQty <= 0)]
@@ -390,19 +369,19 @@ export const DashboardView: React.FC = () => {
                 .map((prod) => (
                   <div
                     key={prod.id}
-                    className="flex items-center justify-between p-2.5 rounded-xl border border-slate-100 hover:bg-slate-50 transition"
+                    className="flex items-center justify-between p-2 rounded-xl bg-slate-50 border border-slate-100"
                   >
                     <div className="truncate mr-2">
                       <p className="text-xs font-semibold text-slate-800 truncate">{prod.name}</p>
-                      <p className="text-[11px] text-slate-500">
-                        รหัส: {prod.sku} • จุดแจ้งเตือน: {prod.minStockAlert || 10} {prod.unit}
+                      <p className="text-[10px] text-slate-400 font-mono">
+                        {prod.sku} · จุดเตือน: {prod.minStockAlert || 10} {prod.unit}
                       </p>
                     </div>
                     <span
-                      className={`px-2 py-0.5 rounded-full text-xs font-bold shrink-0 ${
+                      className={`px-2 py-0.5 rounded-md text-[11px] font-semibold shrink-0 tabular-nums ${
                         prod.stockQty <= 0
-                          ? 'bg-red-100 text-red-700'
-                          : 'bg-amber-100 text-amber-800'
+                          ? 'bg-red-50 text-red-700 border border-red-200'
+                          : 'bg-amber-50 text-amber-700 border border-amber-200'
                       }`}
                     >
                       เหลือ {prod.stockQty} {prod.unit}
@@ -414,24 +393,26 @@ export const DashboardView: React.FC = () => {
         </div>
       </div>
 
-      {/* Top 10 Bestselling Products */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
-        <div className="p-5 border-b border-slate-100 flex items-center justify-between">
+      {/* Top 10 Bestselling Products Table */}
+      <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden">
+        <div className="p-4 sm:p-5 border-b border-slate-100 flex items-center justify-between">
           <div>
-            <h3 className="font-bold text-slate-800 text-base">สินค้าขายดี 10 อันดับแรก</h3>
-            <p className="text-xs text-slate-500">จัดอันดับตามจำนวนชิ้นที่ขายได้จากประวัติบิลจริง</p>
+            <h3 className="font-bold text-slate-900 text-sm md:text-base">สินค้าขายดี 10 อันดับแรก</h3>
+            <p className="text-xs text-slate-500">จัดอันดับตามจำนวนชิ้นที่ขายจริงจากประวัติบิล</p>
           </div>
           <button
+            type="button"
             onClick={() => setActiveTab('reports')}
-            className="text-xs text-blue-600 hover:underline font-semibold"
+            className="text-xs text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1 cursor-pointer"
           >
-            ดูรายงานฉบับเต็ม
+            <span>ดูรายงานเต็ม</span>
+            <ArrowUpRight className="w-3.5 h-3.5" />
           </button>
         </div>
 
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs md:text-sm">
-            <thead className="bg-slate-50 text-slate-600 font-semibold border-b border-slate-200 text-xs">
+            <thead className="bg-slate-50/70 text-slate-500 font-medium border-b border-slate-200/80 text-xs">
               <tr>
                 <th className="py-3 px-4 w-12 text-center">อันดับ</th>
                 <th className="py-3 px-4">ชื่อสินค้า</th>
@@ -444,37 +425,25 @@ export const DashboardView: React.FC = () => {
             <tbody className="divide-y divide-slate-100">
               {topProducts.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="py-8 text-center text-slate-400">
+                  <td colSpan={6} className="py-8 text-center text-slate-400 text-xs">
                     ยังไม่มีข้อมูลประวัติการขาย เริ่มต้นเปิดบิลแรกที่เมนูระบบขาย (POS)
                   </td>
                 </tr>
               ) : (
                 topProducts.map((p, index) => (
-                  <tr key={p.productId} className="hover:bg-slate-50/80 transition">
-                    <td className="py-3 px-4 text-center font-bold">
-                      <span
-                        className={`inline-flex items-center justify-center w-6 h-6 rounded-full text-xs font-bold ${
-                          index === 0
-                            ? 'bg-amber-100 text-amber-800'
-                            : index === 1
-                            ? 'bg-slate-200 text-slate-700'
-                            : index === 2
-                            ? 'bg-amber-50 text-amber-700'
-                            : 'text-slate-500'
-                        }`}
-                      >
-                        {index + 1}
-                      </span>
+                  <tr key={p.productId} className="hover:bg-slate-50/60 transition-colors">
+                    <td className="py-3 px-4 text-center font-bold text-slate-500 font-mono">
+                      {index + 1}
                     </td>
-                    <td className="py-3 px-4 font-semibold text-slate-800">{p.name}</td>
+                    <td className="py-3 px-4 font-semibold text-slate-900">{p.name}</td>
                     <td className="py-3 px-4 text-center font-mono text-xs text-slate-500">{p.sku}</td>
-                    <td className="py-3 px-4 text-right font-bold text-slate-800">
+                    <td className="py-3 px-4 text-right font-medium text-slate-900 font-mono tabular-nums">
                       {formatNumber(p.qty)} <span className="font-normal text-xs text-slate-500">{p.unit}</span>
                     </td>
-                    <td className="py-3 px-4 text-right font-medium text-slate-700">
+                    <td className="py-3 px-4 text-right font-medium text-slate-800 font-mono tabular-nums">
                       {formatCurrency(p.revenue, currency)}
                     </td>
-                    <td className="py-3 px-4 text-right font-bold text-emerald-600">
+                    <td className="py-3 px-4 text-right font-semibold text-emerald-600 font-mono tabular-nums">
                       {formatCurrency(p.profit, currency)}
                     </td>
                   </tr>
