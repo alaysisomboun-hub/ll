@@ -92,5 +92,17 @@ service cloud.firestore {
       allow read: if true;
       allow write: if isValidId(debtId);
     }
+
+    // Store incomes
+    match /incomes/{incomeId} {
+      allow read: if true;
+      allow write: if isValidId(incomeId);
+    }
+
+    // Finance resets & audit checkpoints
+    match /finance_resets/{resetId} {
+      allow read: if true;
+      allow write: if isValidId(resetId);
+    }
   }
 }

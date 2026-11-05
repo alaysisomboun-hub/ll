@@ -35,6 +35,10 @@ import {
   Sale,
   SaleItem,
   Expense,
+  ExpenseCategory,
+  Income,
+  IncomeCategory,
+  FinanceReset,
   InventoryTransaction,
   StoreSettings,
   UserProfile,
@@ -70,6 +74,8 @@ interface AppContextType {
   suppliers: Supplier[];
   sales: Sale[];
   expenses: Expense[];
+  incomes: Income[];
+  financeResets: FinanceReset[];
   transactions: InventoryTransaction[];
   users: UserProfile[];
   loading: boolean;
@@ -128,6 +134,34 @@ interface AppContextType {
   // Customer actions
   recordCustomerDebtPayment: (customerId: string, amount: number, method: 'cash' | 'transfer', notes?: string) => Promise<void>;
 
+  // Finance & Expense actions
+  recordIncome: (data: {
+    title: string;
+    amount: number;
+    category: IncomeCategory | string;
+    categoryName?: string;
+    date: string;
+    time?: string;
+    paymentMethod: 'cash' | 'transfer';
+    referenceId?: string;
+    note?: string;
+    isFromSales?: boolean;
+  }) => Promise<void>;
+  recordExpense: (data: {
+    title: string;
+    amount: number;
+    category: ExpenseCategory;
+    date: string;
+    time?: string;
+    paymentMethod: 'cash' | 'transfer';
+    referenceId?: string;
+    note?: string;
+    receiptUrl?: string;
+  }) => Promise<void>;
+  deleteIncome: (id: string) => Promise<void>;
+  deleteExpense: (id: string) => Promise<void>;
+  recordFinanceReset: (reason: string, periodLabel?: string) => Promise<FinanceReset>;
+
   // Seeder
   seedDemoData: () => Promise<void>;
 
@@ -154,6 +188,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [sales, setSales] = useState<Sale[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [incomes, setIncomes] = useState<Income[]>([]);
+  const [financeResets, setFinanceResets] = useState<FinanceReset[]>([]);
   const [transactions, setTransactions] = useState<InventoryTransaction[]>([]);
   const [users, setUsers] = useState<UserProfile[]>([]);
 
@@ -647,8 +683,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       (err) => handleFirestoreError(err, OperationType.GET, 'suppliers')
     );
 
-    // 6. Sales listener
-    const salesQuery = query(collection(db, 'sales'), orderBy('createdAt', 'desc'), limit(500));
+    // 6. Sales listener (extended limit for historical reports)
+    const salesQuery = query(collection(db, 'sales'), orderBy('createdAt', 'desc'), limit(1500));
     const unsubSales = onSnapshot(
       salesQuery,
       (snap) => {
@@ -662,7 +698,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     );
 
     // 7. Expenses listener
-    const expQuery = query(collection(db, 'expenses'), orderBy('createdAt', 'desc'), limit(300));
+    const expQuery = query(collection(db, 'expenses'), orderBy('createdAt', 'desc'), limit(1000));
     const unsubExpenses = onSnapshot(
       expQuery,
       (snap) => {
@@ -675,8 +711,36 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       (err) => handleFirestoreError(err, OperationType.GET, 'expenses')
     );
 
-    // 8. Transactions listener
-    const txQuery = query(collection(db, 'inventory_transactions'), orderBy('createdAt', 'desc'), limit(300));
+    // 8. Incomes listener
+    const incQuery = query(collection(db, 'incomes'), orderBy('createdAt', 'desc'), limit(1000));
+    const unsubIncomes = onSnapshot(
+      incQuery,
+      (snap) => {
+        const list: Income[] = [];
+        snap.forEach((d) => {
+          list.push({ id: d.id, ...d.data() } as Income);
+        });
+        setIncomes(list);
+      },
+      (err) => handleFirestoreError(err, OperationType.GET, 'incomes')
+    );
+
+    // 9. Finance Resets listener
+    const resetQuery = query(collection(db, 'finance_resets'), orderBy('createdAt', 'desc'), limit(100));
+    const unsubResets = onSnapshot(
+      resetQuery,
+      (snap) => {
+        const list: FinanceReset[] = [];
+        snap.forEach((d) => {
+          list.push({ id: d.id, ...d.data() } as FinanceReset);
+        });
+        setFinanceResets(list);
+      },
+      (err) => handleFirestoreError(err, OperationType.GET, 'finance_resets')
+    );
+
+    // 10. Transactions listener
+    const txQuery = query(collection(db, 'inventory_transactions'), orderBy('createdAt', 'desc'), limit(500));
     const unsubTx = onSnapshot(
       txQuery,
       (snap) => {
@@ -689,7 +753,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       (err) => handleFirestoreError(err, OperationType.GET, 'inventory_transactions')
     );
 
-    // 9. Users listener
+    // 11. Users listener
     const unsubUsers = onSnapshot(
       collection(db, 'users'),
       (snap) => {
@@ -710,6 +774,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       unsubSuppliers();
       unsubSales();
       unsubExpenses();
+      unsubIncomes();
+      unsubResets();
       unsubTx();
       unsubUsers();
     };
@@ -1340,6 +1406,163 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
   };
 
+  // Record Income (manual or additional)
+  const recordIncome = async (data: {
+    title: string;
+    amount: number;
+    category: IncomeCategory | string;
+    categoryName?: string;
+    date: string;
+    time?: string;
+    paymentMethod: 'cash' | 'transfer';
+    referenceId?: string;
+    note?: string;
+    isFromSales?: boolean;
+  }) => {
+    try {
+      const now = new Date();
+      const nowIso = now.toISOString();
+      const currentTimeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+      const docRef = doc(collection(db, 'incomes'));
+      const record: Income = {
+        id: docRef.id,
+        title: data.title.trim(),
+        amount: Number(data.amount) || 0,
+        category: data.category,
+        categoryName: data.categoryName,
+        date: data.date || nowIso.split('T')[0],
+        time: data.time || currentTimeStr,
+        paymentMethod: data.paymentMethod || 'cash',
+        referenceId: data.referenceId?.trim() || '',
+        note: data.note?.trim() || '',
+        isFromSales: data.isFromSales ?? false,
+        recordedBy: currentUser?.displayName || 'เจ้าหน้าที่การเงิน',
+        createdAt: nowIso,
+      };
+      await setDoc(docRef, record);
+      showToast(`บันทึกรายรับ "${record.title}" สำเร็จ`, 'success');
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, 'incomes');
+      throw err;
+    }
+  };
+
+  // Record Expense
+  const recordExpense = async (data: {
+    title: string;
+    amount: number;
+    category: ExpenseCategory;
+    date: string;
+    time?: string;
+    paymentMethod: 'cash' | 'transfer';
+    referenceId?: string;
+    note?: string;
+    receiptUrl?: string;
+  }) => {
+    try {
+      const now = new Date();
+      const nowIso = now.toISOString();
+      const currentTimeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+      const docRef = doc(collection(db, 'expenses'));
+      const record: Expense = {
+        id: docRef.id,
+        title: data.title.trim(),
+        amount: Number(data.amount) || 0,
+        category: data.category,
+        date: data.date || nowIso.split('T')[0],
+        time: data.time || currentTimeStr,
+        paymentMethod: data.paymentMethod || 'cash',
+        referenceId: data.referenceId?.trim() || '',
+        note: data.note?.trim() || '',
+        receiptUrl: data.receiptUrl?.trim() || '',
+        recordedBy: currentUser?.displayName || 'เจ้าหน้าที่การเงิน',
+        createdAt: nowIso,
+      };
+      await setDoc(docRef, record);
+      showToast(`บันทึกรายจ่าย "${record.title}" สำเร็จ`, 'success');
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, 'expenses');
+      throw err;
+    }
+  };
+
+  // Delete Income (Admin/Owner only)
+  const deleteIncome = async (id: string) => {
+    if (currentUser?.role !== 'owner' && currentUser?.role !== 'admin') {
+      showToast('เฉพาะเจ้าของร้านหรือผู้ดูแลระบบ (Admin) เท่านั้นที่สามารถลบรายการได้', 'warning');
+      return;
+    }
+    try {
+      await deleteDoc(doc(db, 'incomes', id));
+      showToast('ลบรายการรายรับเรียบร้อยแล้ว', 'info');
+    } catch (err) {
+      handleFirestoreError(err, OperationType.DELETE, `incomes/${id}`);
+    }
+  };
+
+  // Delete Expense (Admin/Owner only)
+  const deleteExpense = async (id: string) => {
+    if (currentUser?.role !== 'owner' && currentUser?.role !== 'admin') {
+      showToast('เฉพาะเจ้าของร้านหรือผู้ดูแลระบบ (Admin) เท่านั้นที่สามารถลบรายการได้', 'warning');
+      return;
+    }
+    try {
+      await deleteDoc(doc(db, 'expenses', id));
+      showToast('ลบรายการรายจ่ายเรียบร้อยแล้ว', 'info');
+    } catch (err) {
+      handleFirestoreError(err, OperationType.DELETE, `expenses/${id}`);
+    }
+  };
+
+  // Record Finance Reset Checkpoint (Admin/Owner only - NEVER DELETES HISTORY)
+  const recordFinanceReset = async (reason: string, periodLabel?: string): Promise<FinanceReset> => {
+    if (currentUser?.role !== 'owner' && currentUser?.role !== 'admin') {
+      throw new Error('เฉพาะสิทธิ์ Admin หรือ เจ้าของร้านเท่านั้นที่สามารถรีเซ็ตรอบบัญชีการเงินได้');
+    }
+    try {
+      const nowIso = new Date().toISOString();
+      const activeSales = sales.filter((s) => s.status === 'completed');
+      const totalSalesRevenue = activeSales.reduce((acc, s) => acc + (s.totalAmount || 0), 0);
+      const extraIncomes = incomes.reduce((acc, i) => acc + (i.amount || 0), 0);
+      const totalIncomeBefore = totalSalesRevenue + extraIncomes;
+      const totalExpenseBefore = expenses.reduce((acc, e) => acc + (e.amount || 0), 0);
+      const netProfitBefore = totalIncomeBefore - totalExpenseBefore;
+
+      const cashSales = activeSales.filter(s => s.paymentMethod === 'cash').reduce((a, s) => a + s.totalAmount, 0);
+      const cashIncomes = incomes.filter(i => i.paymentMethod === 'cash').reduce((a, i) => a + i.amount, 0);
+      const cashExpenses = expenses.filter(e => e.paymentMethod === 'cash').reduce((a, e) => a + e.amount, 0);
+      const cashBalanceBefore = (cashSales + cashIncomes) - cashExpenses;
+
+      const transferSales = activeSales.filter(s => s.paymentMethod === 'transfer').reduce((a, s) => a + s.totalAmount, 0);
+      const transferIncomes = incomes.filter(i => i.paymentMethod === 'transfer').reduce((a, i) => a + i.amount, 0);
+      const transferExpenses = expenses.filter(e => e.paymentMethod === 'transfer').reduce((a, e) => a + e.amount, 0);
+      const transferBalanceBefore = (transferSales + transferIncomes) - transferExpenses;
+
+      const docRef = doc(collection(db, 'finance_resets'));
+      const checkpoint: FinanceReset = {
+        id: docRef.id,
+        resetDate: nowIso,
+        resetBy: currentUser?.displayName || 'ผู้ดูแลระบบ (Admin)',
+        reason: reason.trim(),
+        periodLabel: periodLabel || `รอบการเงิน ณ วันที่ ${nowIso.split('T')[0]}`,
+        totalIncomeBefore,
+        totalExpenseBefore,
+        netProfitBefore,
+        totalSalesCountBefore: activeSales.length,
+        totalExpensesCountBefore: expenses.length,
+        cashBalanceBefore,
+        transferBalanceBefore,
+        createdAt: nowIso,
+      };
+      await setDoc(docRef, checkpoint);
+      showToast('บันทึกจุดตัดรอบการเงินและสำรองประวัติ (Checkpoint) สำเร็จ', 'success');
+      return checkpoint;
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, 'finance_resets');
+      throw err;
+    }
+  };
+
   const seedDemoData = async () => {
     setLoading(true);
     const res = await checkAndSeedInitialData();
@@ -1367,6 +1590,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         suppliers,
         sales,
         expenses,
+        incomes,
+        financeResets,
         transactions,
         users,
         loading,
@@ -1404,6 +1629,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         adjustStock,
         receiveSupplierStock,
         recordCustomerDebtPayment,
+        recordIncome,
+        recordExpense,
+        deleteIncome,
+        deleteExpense,
+        recordFinanceReset,
         seedDemoData,
         toasts,
         showToast,

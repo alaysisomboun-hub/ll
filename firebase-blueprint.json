@@ -257,6 +257,46 @@
         "updatedAt": { "type": "string" }
       },
       "required": ["storeName", "currency", "language"]
+    },
+    "Income": {
+      "title": "Income",
+      "description": "Store income transactions (sales revenue, debt collections, and other incomes)",
+      "type": "object",
+      "properties": {
+        "category": { "type": "string", "maxLength": 50 },
+        "categoryName": { "type": "string", "maxLength": 100 },
+        "title": { "type": "string", "maxLength": 150 },
+        "amount": { "type": "number" },
+        "date": { "type": "string" },
+        "time": { "type": "string" },
+        "paymentMethod": { "type": "string", "enum": ["cash", "transfer"] },
+        "referenceId": { "type": "string", "maxLength": 64 },
+        "recordedBy": { "type": "string", "maxLength": 100 },
+        "note": { "type": "string", "maxLength": 500 },
+        "isFromSales": { "type": "boolean" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["title", "amount", "date", "category", "paymentMethod"]
+    },
+    "FinanceReset": {
+      "title": "FinanceReset",
+      "description": "Audit checkpoints and financial period reset logs",
+      "type": "object",
+      "properties": {
+        "resetDate": { "type": "string" },
+        "resetBy": { "type": "string", "maxLength": 100 },
+        "reason": { "type": "string", "maxLength": 500 },
+        "periodLabel": { "type": "string", "maxLength": 100 },
+        "totalIncomeBefore": { "type": "number" },
+        "totalExpenseBefore": { "type": "number" },
+        "netProfitBefore": { "type": "number" },
+        "totalSalesCountBefore": { "type": "number" },
+        "totalExpensesCountBefore": { "type": "number" },
+        "cashBalanceBefore": { "type": "number" },
+        "transferBalanceBefore": { "type": "number" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["resetDate", "resetBy", "reason", "createdAt"]
     }
   },
   "firestore": {
@@ -299,6 +339,14 @@
     "/expenses/{expenseId}": {
       "schema": "Expense",
       "description": "Business expenses"
+    },
+    "/incomes/{incomeId}": {
+      "schema": "Income",
+      "description": "Direct and extra incomes"
+    },
+    "/finance_resets/{resetId}": {
+      "schema": "FinanceReset",
+      "description": "Financial checkpoint and reset logs"
     },
     "/payments/{paymentId}": {
       "schema": "Payment",

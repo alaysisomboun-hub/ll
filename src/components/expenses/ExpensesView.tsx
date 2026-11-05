@@ -47,7 +47,9 @@ export const ExpensesView: React.FC = () => {
     title: string;
     amount: number;
     date: string;
+    time: string;
     paymentMethod: 'cash' | 'transfer';
+    referenceId: string;
     note: string;
     receiptUrl: string;
   }>({
@@ -55,7 +57,9 @@ export const ExpensesView: React.FC = () => {
     title: '',
     amount: 0,
     date: new Date().toISOString().split('T')[0],
+    time: `${String(new Date().getHours()).padStart(2, '0')}:${String(new Date().getMinutes()).padStart(2, '0')}`,
     paymentMethod: 'transfer',
+    referenceId: '',
     note: '',
     receiptUrl: '',
   });
@@ -102,14 +106,18 @@ export const ExpensesView: React.FC = () => {
 
     try {
       setIsSubmitting(true);
-      const nowIso = new Date().toISOString();
+      const now = new Date();
+      const nowIso = now.toISOString();
+      const timeVal = formData.time || `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
       const ref = doc(collection(db, 'expenses'));
       await setDoc(ref, {
         category: formData.category,
         title: formData.title.trim(),
         amount: Number(formData.amount),
         date: formData.date,
+        time: timeVal,
         paymentMethod: formData.paymentMethod,
+        referenceId: formData.referenceId.trim(),
         note: formData.note.trim(),
         receiptUrl: formData.receiptUrl.trim(),
         recordedBy: currentUser?.displayName || 'พนักงาน',
@@ -124,7 +132,9 @@ export const ExpensesView: React.FC = () => {
         title: '',
         amount: 0,
         date: new Date().toISOString().split('T')[0],
+        time: `${String(new Date().getHours()).padStart(2, '0')}:${String(new Date().getMinutes()).padStart(2, '0')}`,
         paymentMethod: 'transfer',
+        referenceId: '',
         note: '',
         receiptUrl: '',
       });

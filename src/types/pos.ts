@@ -188,11 +188,52 @@ export interface Expense {
   category: ExpenseCategory;
   title: string;
   amount: number;
-  date: string;
+  date: string; // YYYY-MM-DD
+  time?: string; // HH:mm
   paymentMethod: 'cash' | 'transfer';
+  referenceId?: string;
   note?: string;
   receiptUrl?: string;
   recordedBy: string;
+  createdAt: string;
+}
+
+export type IncomeCategory =
+  | 'sales'
+  | 'debt_collection'
+  | 'service'
+  | 'interest'
+  | 'other';
+
+export interface Income {
+  id: string;
+  category: IncomeCategory | string;
+  categoryName?: string;
+  title: string;
+  amount: number;
+  date: string; // YYYY-MM-DD
+  time?: string; // HH:mm
+  paymentMethod: 'cash' | 'transfer';
+  referenceId?: string;
+  recordedBy: string;
+  note?: string;
+  isFromSales?: boolean;
+  createdAt: string;
+}
+
+export interface FinanceReset {
+  id: string;
+  resetDate: string;
+  resetBy: string;
+  reason: string;
+  periodLabel?: string;
+  totalIncomeBefore: number;
+  totalExpenseBefore: number;
+  netProfitBefore: number;
+  totalSalesCountBefore: number;
+  totalExpensesCountBefore: number;
+  cashBalanceBefore: number;
+  transferBalanceBefore: number;
   createdAt: string;
 }
 
