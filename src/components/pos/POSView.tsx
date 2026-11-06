@@ -27,6 +27,7 @@ import {
   Lock,
   Unlock,
   Sparkles,
+  Cpu,
 } from 'lucide-react';
 import { collection, doc, setDoc } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../../firebase';
@@ -35,8 +36,10 @@ import { Product, Customer, Sale } from '../../types/pos';
 import { formatCurrency, formatNumber, formatDateTime } from '../../utils/formatters';
 import { ReceiptModal } from './ReceiptModal';
 import { CameraBarcodeScannerModal } from '../common/CameraBarcodeScannerModal';
+import { BarcodeScannerDiagnosticModal } from '../common/BarcodeScannerDiagnosticModal';
 import { ResetConfirmModal } from '../common/ResetConfirmModal';
 import { playScanSuccessSound, playScanErrorSound } from '../../utils/audio';
+import { useHardwareBarcodeScanner } from '../../utils/hardwareBarcodeScanner';
 
 export const POSView: React.FC = () => {
   const {
@@ -117,6 +120,7 @@ export const POSView: React.FC = () => {
   // Reset Modals State
   const [isResetPOSModalOpen, setIsResetPOSModalOpen] = useState<boolean>(false);
   const [isResetCartModalOpen, setIsResetCartModalOpen] = useState<boolean>(false);
+  const [isDiagnosticModalOpen, setIsDiagnosticModalOpen] = useState<boolean>(false);
 
   // Full POS Terminal Reset
   const handleResetPOS = () => {
@@ -247,6 +251,21 @@ export const POSView: React.FC = () => {
     e.preventDefault();
     processScannedBarcode(barcodeInput, scanQuantity);
   };
+
+  // Dedicated Hardware Barcode Scanner Listener (USB / Bluetooth HID)
+  const hardwareScannerState = useHardwareBarcodeScanner({
+    onScan: (scannedCode) => {
+      processScannedBarcode(scannedCode, scanQuantity);
+    },
+    enabled:
+      activeTab === 'terminal' &&
+      !isCheckoutOpen &&
+      !isCustomerModalOpen &&
+      !isQuickAddModalOpen &&
+      !isCameraScannerOpen &&
+      !isDiagnosticModalOpen,
+    duplicateTimeoutMs: 800,
+  });
 
   // Quick Add Product directly from POS scan
   const handleQuickAddProduct = async (e: React.FormEvent) => {
@@ -501,8 +520,25 @@ export const POSView: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Controls: Multiplier, Camera, Auto-focus lock */}
-                <div className="flex items-center gap-2">
+                {/* Controls: Multiplier, Hardware Scanner Status, Diagnostic Tool, Camera, Auto-focus lock */}
+                <div className="flex items-center gap-2 flex-wrap">
+                  {/* Live Hardware Scanner Indicator Badge */}
+                  <button
+                    type="button"
+                    onClick={() => setIsDiagnosticModalOpen(true)}
+                    className="flex items-center gap-1.5 px-2.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-xl text-xs font-semibold transition cursor-pointer"
+                    title="เครื่องสแกนบาร์โค้ด USB / Bluetooth พร้อมรับคำสั่งทันที (คลิกเพื่อทดสอบ)"
+                  >
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+                    <span className="hidden lg:inline">สแกนเนอร์ USB/BT:</span>
+                    <span>พร้อม</span>
+                    {hardwareScannerState.scanCount > 0 && (
+                      <span className="bg-emerald-600 text-white text-[10px] px-1.5 py-0.2 rounded-md font-mono font-bold">
+                        {hardwareScannerState.scanCount}
+                      </span>
+                    )}
+                  </button>
+
                   {/* Multiplier / Quantity Picker */}
                   <div className="flex items-center gap-1 bg-slate-50 px-2 py-1 rounded-xl border border-slate-200 text-xs">
                     <span className="text-[11px] text-slate-500 font-medium">จำนวน:</span>
@@ -529,6 +565,17 @@ export const POSView: React.FC = () => {
                       className="w-10 px-1 py-0.5 text-center text-xs bg-white border border-slate-200 rounded text-slate-900 font-mono font-bold"
                     />
                   </div>
+
+                  {/* Diagnostic Suite Trigger Button */}
+                  <button
+                    type="button"
+                    onClick={() => setIsDiagnosticModalOpen(true)}
+                    className="flex items-center gap-1.5 px-2.5 py-1.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 rounded-xl text-xs font-semibold shadow-2xs transition cursor-pointer"
+                    title="เปิดศูนย์ทดสอบและวินิจฉัยอุปกรณ์สแกนบาร์โค้ดทุกแพลตฟอร์ม"
+                  >
+                    <Cpu className="w-3.5 h-3.5 text-amber-500" />
+                    <span className="hidden sm:inline">ทดสอบสแกนเนอร์</span>
+                  </button>
 
                   {/* Camera Scanner Button */}
                   <button
@@ -1466,7 +1513,19 @@ export const POSView: React.FC = () => {
         onClose={() => setIsCameraScannerOpen(false)}
         onScan={(code) => processScannedBarcode(code, scanQuantity)}
         continuous={true}
-        title="กล้องสแกนบาร์โค้ดขายสินค้า (POS Scanner)"
+        title="กล้องสแกนบาร์โค้ดขายสินค้า (POS Universal Scanner)"
+        onOpenDiagnostics={() => {
+          setIsCameraScannerOpen(false);
+          setIsDiagnosticModalOpen(true);
+        }}
+      />
+
+      {/* BARCODE SCANNER DIAGNOSTIC & TESTING SUITE MODAL */}
+      <BarcodeScannerDiagnosticModal
+        isOpen={isDiagnosticModalOpen}
+        onClose={() => setIsDiagnosticModalOpen(false)}
+        products={products}
+        onAddToCart={(p, qty) => addToCart(p, qty)}
       />
 
       {/* QUICK ADD UNLISTED PRODUCT MODAL */}
