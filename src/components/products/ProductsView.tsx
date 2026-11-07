@@ -20,6 +20,7 @@ import {
   FolderPlus,
   Folder,
   RotateCcw,
+  Cpu,
 } from 'lucide-react';
 import {
   collection,
@@ -39,6 +40,7 @@ import {
   generateBarcode,
 } from '../../utils/formatters';
 import { CameraBarcodeScannerModal } from '../common/CameraBarcodeScannerModal';
+import { BarcodeScannerDiagnosticModal } from '../common/BarcodeScannerDiagnosticModal';
 import { CategoryModal } from './CategoryModal';
 import { ResetConfirmModal } from '../common/ResetConfirmModal';
 import { playScanSuccessSound, playScanErrorSound } from '../../utils/audio';
@@ -121,6 +123,7 @@ export const ProductsView: React.FC = () => {
   const [scanBarcodeInput, setScanBarcodeInput] = useState<string>('');
   const [isCameraModalOpen, setIsCameraModalOpen] = useState<boolean>(false);
   const [cameraModalTarget, setCameraModalTarget] = useState<'search' | 'form'>('search');
+  const [isDiagnosticModalOpen, setIsDiagnosticModalOpen] = useState<boolean>(false);
   const [scannedMatchResult, setScannedMatchResult] = useState<Product | null>(null);
 
   // Form Fields
@@ -271,11 +274,32 @@ export const ProductsView: React.FC = () => {
     return (((formData.wholesalePrice - formData.costPrice) / formData.wholesalePrice) * 100).toFixed(1);
   }, [formData.wholesalePrice, formData.costPrice]);
 
+  // Duplicate Barcode Check (excluding current product being edited)
+  const duplicateProduct = useMemo(() => {
+    const rawBarcode = formData.barcode.trim();
+    if (!rawBarcode) return null;
+    return (
+      products.find(
+        (p) =>
+          p.barcode === rawBarcode &&
+          (!editingProduct || p.id !== editingProduct.id)
+      ) || null
+    );
+  }, [formData.barcode, products, editingProduct]);
+
   // Submit Form
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.name.trim()) {
       showToast('กรุณากรอกชื่อสินค้า', 'warning');
+      return;
+    }
+
+    if (duplicateProduct) {
+      showToast(
+        `รหัสบาร์โค้ด "${formData.barcode}" ซ้ำกับสินค้า "${duplicateProduct.name}" ที่มีอยู่แล้วในระบบ`,
+        'error'
+      );
       return;
     }
 
@@ -421,6 +445,16 @@ export const ProductsView: React.FC = () => {
           >
             <Camera className="w-3.5 h-3.5" />
             <span className="hidden sm:inline">เปิดกล้องสแกน</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setIsDiagnosticModalOpen(true)}
+            className="flex items-center gap-1.5 px-2.5 py-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 rounded-xl text-xs font-semibold shadow-2xs transition cursor-pointer shrink-0"
+            title="เปิดศูนย์ทดสอบสแกนเนอร์"
+          >
+            <Cpu className="w-3.5 h-3.5 text-amber-500" />
+            <span className="hidden md:inline">ทดสอบสแกนเนอร์</span>
           </button>
         </div>
       </div>
@@ -784,9 +818,50 @@ export const ProductsView: React.FC = () => {
                       placeholder="ยิงบาร์โค้ด หรือกดสแกนด้วยกล้อง..."
                       value={formData.barcode}
                       onChange={(e) => setFormData({ ...formData, barcode: e.target.value })}
-                      className="w-full pl-9 pr-3 py-2 text-xs md:text-sm bg-slate-50 border border-slate-300 rounded-xl font-mono focus:outline-hidden focus:ring-2 focus:ring-blue-500"
+                      className={`w-full pl-9 pr-3 py-2 text-xs md:text-sm bg-slate-50 border rounded-xl font-mono focus:outline-hidden focus:ring-2 ${
+                        duplicateProduct
+                          ? 'border-amber-400 focus:ring-amber-400 bg-amber-50/40 text-amber-950 font-bold'
+                          : 'border-slate-300 focus:ring-blue-500'
+                      }`}
                     />
                   </div>
+
+                  {/* Duplicate Barcode Warning Banner */}
+                  {duplicateProduct && (
+                    <div className="mt-2 p-2.5 rounded-xl bg-amber-50 border border-amber-300 text-amber-900 text-xs flex items-start gap-2 animate-in fade-in">
+                      <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                      <div className="flex-1">
+                        <span className="font-bold">สินค้านี้มีอยู่ในระบบแล้ว (Barcode ซ้ำ):</span>
+                        <p className="text-[11px] text-amber-800 leading-snug mt-0.5">
+                          ชื่อสินค้า: <span className="font-bold">{duplicateProduct.name}</span> (SKU: {duplicateProduct.sku}, หมวด: {duplicateProduct.categoryName})
+                        </p>
+                        <div className="flex items-center gap-2 mt-1.5">
+                          <button
+                            type="button"
+                            onClick={() => handleOpenEdit(duplicateProduct)}
+                            className="text-[10px] font-bold text-blue-700 bg-white px-2 py-0.5 rounded border border-blue-200 hover:bg-blue-50 cursor-pointer shadow-2xs"
+                          >
+                            แก้ไขสินค้านี้แทน
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setFormData({ ...formData, barcode: generateBarcode() })}
+                            className="text-[10px] text-slate-600 hover:text-slate-800 underline cursor-pointer"
+                          >
+                            สุ่มรหัสใหม่
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Valid Unique Barcode Confirmation */}
+                  {formData.barcode && !duplicateProduct && (
+                    <div className="mt-1 text-[11px] text-emerald-600 flex items-center gap-1 font-medium">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                      <span>รหัสบาร์โค้ดพร้อมบันทึก (ตรวจสอบแล้ว ไม่ซ้ำกับสินค้าอื่นในระบบ)</span>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -1077,15 +1152,34 @@ export const ProductsView: React.FC = () => {
         isOpen={isCameraModalOpen}
         onClose={() => setIsCameraModalOpen(false)}
         onScan={(code) => {
+          const cleanCode = String(code).trim();
           if (cameraModalTarget === 'form') {
-            setFormData((prev) => ({ ...prev, barcode: code }));
-            showToast(`สแกนรหัสบาร์โค้ด "${code}" สำเร็จ`, 'success');
+            setFormData((prev) => ({ ...prev, barcode: cleanCode }));
+            showToast(`สแกนรหัสบาร์โค้ด "${cleanCode}" ใส่ช่อง Barcode สำเร็จ`, 'success');
           } else {
-            handleScanToSearchOrAdd(code);
+            handleScanToSearchOrAdd(cleanCode);
           }
         }}
         continuous={false}
-        title={cameraModalTarget === 'form' ? 'สแกนบาร์โค้ดใส่ฟอร์มสินค้า' : 'กล้องสแกนค้นหาหรือเพิ่มสินค้าใหม่'}
+        title={
+          cameraModalTarget === 'form'
+            ? 'สแกนบาร์โค้ดใส่ฟอร์มสินค้า (Add Product Scanner)'
+            : 'กล้องสแกนค้นหาหรือเพิ่มสินค้าใหม่'
+        }
+        showDebugInfo={true}
+        currentFormBarcode={formData.barcode}
+        existingProducts={products}
+        onOpenDiagnostics={() => {
+          setIsCameraModalOpen(false);
+          setIsDiagnosticModalOpen(true);
+        }}
+      />
+
+      {/* BARCODE SCANNER DIAGNOSTIC & TESTING SUITE MODAL */}
+      <BarcodeScannerDiagnosticModal
+        isOpen={isDiagnosticModalOpen}
+        onClose={() => setIsDiagnosticModalOpen(false)}
+        products={products}
       />
 
       {/* CATEGORY MANAGEMENT MODAL */}

@@ -13,10 +13,14 @@ import {
   X,
   Plus,
   RotateCcw,
+  Camera,
+  Barcode,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { Product, InventoryTransactionType } from '../../types/pos';
 import { formatCurrency, formatNumber, formatDateTime } from '../../utils/formatters';
+import { CameraBarcodeScannerModal } from '../common/CameraBarcodeScannerModal';
+import { useHardwareBarcodeScanner } from '../../utils/hardwareBarcodeScanner';
 
 export const InventoryView: React.FC = () => {
   const {
@@ -40,6 +44,39 @@ export const InventoryView: React.FC = () => {
   const [actionReason, setActionReason] = useState<string>('');
   const [referenceDoc, setReferenceDoc] = useState<string>('');
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  const [isCameraScannerOpen, setIsCameraScannerOpen] = useState<boolean>(false);
+
+  // Barcode Handler for Inventory (Search & Stock In/Audit)
+  const handleBarcodeScanned = (rawCode: string) => {
+    const code = String(rawCode).trim();
+    if (!code) return;
+    const found = products.find(
+      (p) =>
+        p.barcode === code ||
+        p.sku.toLowerCase() === code.toLowerCase()
+    );
+
+    if (found) {
+      if (actionModal) {
+        setSelectedProductId(found.id);
+        if (actionModal === 'adjust') {
+          setInputQty(found.stockQty);
+        }
+        showToast(`เลือกสินค้า "${found.name}" จากบาร์โค้ดสำเร็จ`, 'success');
+      } else {
+        setSearch(found.name);
+        showToast(`พบสินค้า "${found.name}" (สต็อก: ${found.stockQty} ${found.unit})`, 'success');
+      }
+    } else {
+      showToast(`ไม่พบสินค้าตรงกับบาร์โค้ด "${code}" ในระบบคลังสินค้า`, 'warning');
+    }
+  };
+
+  useHardwareBarcodeScanner({
+    onScan: handleBarcodeScanned,
+    enabled: !isCameraScannerOpen,
+    duplicateTimeoutMs: 800,
+  });
 
   // Stats calculations
   const stats = useMemo(() => {
@@ -224,7 +261,7 @@ export const InventoryView: React.FC = () => {
             </button>
           </div>
 
-          {/* Search bar inside tab */}
+          {/* Search bar & Barcode Scanner inside tab */}
           <div className="flex items-center gap-2">
             <div className="relative sm:w-72">
               <Search className="absolute left-3 top-2.5 w-4 h-4 text-slate-400" />
@@ -236,6 +273,16 @@ export const InventoryView: React.FC = () => {
                 className="w-full pl-9 pr-3 py-2 text-xs bg-white border border-slate-200 rounded-xl focus:outline-hidden"
               />
             </div>
+
+            <button
+              type="button"
+              onClick={() => setIsCameraScannerOpen(true)}
+              className="flex items-center gap-1.5 px-3 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-semibold shadow-xs transition active:scale-95 cursor-pointer shrink-0"
+              title="เปิดกล้องสแกนบาร์โค้ดสินค้าในคลัง"
+            >
+              <Camera className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">สแกนบาร์โค้ด</span>
+            </button>
 
             {(search !== '' || (activeTab === 'transactions' && filterType !== 'all')) && (
               <button
@@ -473,7 +520,17 @@ export const InventoryView: React.FC = () => {
             <form onSubmit={handleSubmitAction} className="space-y-3.5">
               {/* Product Selector */}
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">เลือกสินค้า</label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-xs font-semibold text-slate-700">เลือกสินค้า</label>
+                  <button
+                    type="button"
+                    onClick={() => setIsCameraScannerOpen(true)}
+                    className="text-[11px] text-blue-600 hover:text-blue-700 font-semibold flex items-center gap-1 cursor-pointer"
+                  >
+                    <Camera className="w-3 h-3" />
+                    <span>สแกนบาร์โค้ดเลือกสินค้า</span>
+                  </button>
+                </div>
                 <select
                   value={selectedProductId}
                   onChange={(e) => {
@@ -487,7 +544,7 @@ export const InventoryView: React.FC = () => {
                 >
                   {products.map((p) => (
                     <option key={p.id} value={p.id}>
-                      {p.name} (คงเหลือ: {p.stockQty} {p.unit})
+                      {p.name} {p.barcode ? `(${p.barcode})` : ''} - คงเหลือ: {p.stockQty} {p.unit}
                     </option>
                   ))}
                 </select>
@@ -587,6 +644,16 @@ export const InventoryView: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* CAMERA BARCODE SCANNER MODAL */}
+      <CameraBarcodeScannerModal
+        isOpen={isCameraScannerOpen}
+        onClose={() => setIsCameraScannerOpen(false)}
+        onScan={handleBarcodeScanned}
+        continuous={false}
+        title="สแกนบาร์โค้ดสินค้าในคลัง (Inventory Barcode Scanner)"
+        existingProducts={products}
+      />
     </div>
   );
 };

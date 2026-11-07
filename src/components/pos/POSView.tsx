@@ -1514,6 +1514,7 @@ export const POSView: React.FC = () => {
         onScan={(code) => processScannedBarcode(code, scanQuantity)}
         continuous={true}
         title="กล้องสแกนบาร์โค้ดขายสินค้า (POS Universal Scanner)"
+        existingProducts={products}
         onOpenDiagnostics={() => {
           setIsCameraScannerOpen(false);
           setIsDiagnosticModalOpen(true);
