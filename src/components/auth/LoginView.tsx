@@ -175,38 +175,38 @@ export const LoginView: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col justify-center items-center p-4 sm:p-6 text-slate-800">
+    <div className="min-h-screen bg-slate-100 flex flex-col justify-center items-center p-4 sm:p-6 text-slate-800">
       <div className="w-full max-w-md">
         {/* Brand Lockup */}
         <div className="text-center mb-6">
-          <div className="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-blue-600 text-white shadow-xs mb-3">
+          <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl bg-blue-600 text-white shadow-xs mb-3">
             <Store className="w-6 h-6" />
           </div>
           <h1 className="text-xl font-bold text-slate-900 tracking-tight">
             {settings.storeName || 'POS Wholesale & Retail'}
           </h1>
           <p className="text-xs text-slate-500 mt-1">
-            ระบบบริหารจัดการร้านค้าขายส่งและขายปลีก
+            ระบบบริหารจัดการร้านค้าขายส่งและขายปลีก (Blue & White Theme)
           </p>
         </div>
 
         {/* Clean Auth Card */}
-        <div className="bg-white rounded-2xl border border-slate-200/90 shadow-sm overflow-hidden">
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
           {/* Minimalist Segmented Tabs */}
-          <div className="flex border-b border-slate-200 bg-slate-50/70 p-1 gap-1">
+          <div className="flex border-b border-slate-200 bg-slate-50 p-1.5 gap-1.5">
             <button
               type="button"
               onClick={() => {
                 setActiveTab('login');
                 setErrorMessage('');
               }}
-              className={`flex-1 py-2 text-xs font-semibold rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+              className={`flex-1 py-2 text-xs font-bold rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
                 activeTab === 'login'
-                  ? 'bg-white text-slate-900 shadow-xs'
+                  ? 'bg-white text-blue-700 shadow-xs border border-slate-200/80'
                   : 'text-slate-500 hover:text-slate-900'
               }`}
             >
-              <LogIn className="w-3.5 h-3.5" />
+              <LogIn className="w-3.5 h-3.5 text-blue-600" />
               <span>เข้าสู่ระบบ (Sign In)</span>
             </button>
             <button
@@ -215,13 +215,13 @@ export const LoginView: React.FC = () => {
                 setActiveTab('register');
                 setErrorMessage('');
               }}
-              className={`flex-1 py-2 text-xs font-semibold rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+              className={`flex-1 py-2 text-xs font-bold rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
                 activeTab === 'register'
-                  ? 'bg-white text-slate-900 shadow-xs'
+                  ? 'bg-white text-blue-700 shadow-xs border border-slate-200/80'
                   : 'text-slate-500 hover:text-slate-900'
               }`}
             >
-              <UserPlus className="w-3.5 h-3.5" />
+              <UserPlus className="w-3.5 h-3.5 text-blue-600" />
               <span>สมัครพนักงาน (Register)</span>
             </button>
           </div>

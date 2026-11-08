@@ -70,12 +70,12 @@ export const Header: React.FC<HeaderProps> = ({ onMenuToggle }) => {
   };
 
   return (
-    <header className="sticky top-0 z-30 flex items-center justify-between h-16 px-4 md:px-6 bg-white/95 backdrop-blur-xs border-b border-slate-200/80 transition-colors">
+    <header className="sticky top-0 z-30 flex items-center justify-between h-16 px-4 md:px-6 bg-white border-b border-slate-200 shadow-2xs transition-colors">
       {/* Left: Hamburger + Page Title & Store Context */}
       <div className="flex items-center gap-3 min-w-0">
         <button
           onClick={onMenuToggle}
-          className="p-2 text-slate-500 rounded-lg hover:bg-slate-100 hover:text-slate-800 lg:hidden focus:outline-hidden transition-colors"
+          className="p-2 text-slate-500 rounded-xl hover:bg-slate-100 hover:text-slate-800 lg:hidden focus:outline-hidden transition-colors cursor-pointer"
           aria-label="Toggle navigation menu"
         >
           <Menu className="w-5 h-5" />
@@ -86,8 +86,8 @@ export const Header: React.FC<HeaderProps> = ({ onMenuToggle }) => {
             <h1 className="text-base md:text-lg font-bold text-slate-900 tracking-tight truncate">
               {tabTitles[activeTab] || 'ระบบจัดการร้านค้า'}
             </h1>
-            <span className="hidden sm:inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200/70">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+            <span className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-blue-50 text-blue-700 border border-blue-200/80">
+              <span className="w-1.5 h-1.5 rounded-full bg-blue-600 animate-pulse" />
               <span>คลาวด์ออนไลน์</span>
             </span>
           </div>
@@ -100,20 +100,20 @@ export const Header: React.FC<HeaderProps> = ({ onMenuToggle }) => {
       {/* Right Controls: Clock, Currency, Language, User */}
       <div className="flex items-center gap-2 md:gap-3">
         {/* Real-time Clock */}
-        <div className="hidden xl:flex items-center gap-1.5 text-xs text-slate-500 bg-slate-50 px-2.5 py-1.5 rounded-lg border border-slate-200/80">
-          <Clock className="w-3.5 h-3.5 text-slate-400" />
-          <span className="font-mono tabular-nums text-slate-700">{time}</span>
+        <div className="hidden xl:flex items-center gap-1.5 text-xs text-slate-600 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200">
+          <Clock className="w-3.5 h-3.5 text-blue-600" />
+          <span className="font-mono tabular-nums text-slate-800 font-semibold">{time}</span>
         </div>
 
         {/* Currency Switcher */}
-        <div className="inline-flex items-center bg-slate-100 p-0.5 rounded-lg border border-slate-200/80 text-xs font-semibold">
+        <div className="inline-flex items-center bg-slate-100 p-0.5 rounded-xl border border-slate-200 text-xs font-semibold">
           <button
             type="button"
             onClick={() => setCurrency('THB')}
-            className={`px-2 py-1 rounded-md transition-all ${
+            className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
               currency === 'THB'
-                ? 'bg-white text-slate-900 shadow-xs'
-                : 'text-slate-500 hover:text-slate-800'
+                ? 'bg-white text-blue-700 shadow-xs font-bold border border-slate-200/60'
+                : 'text-slate-600 hover:text-slate-900'
             }`}
             title="สกุลเงินบาทไทย (THB)"
           >
@@ -122,10 +122,10 @@ export const Header: React.FC<HeaderProps> = ({ onMenuToggle }) => {
           <button
             type="button"
             onClick={() => setCurrency('LAK')}
-            className={`px-2 py-1 rounded-md transition-all ${
+            className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
               currency === 'LAK'
-                ? 'bg-white text-slate-900 shadow-xs'
-                : 'text-slate-500 hover:text-slate-800'
+                ? 'bg-white text-blue-700 shadow-xs font-bold border border-slate-200/60'
+                : 'text-slate-600 hover:text-slate-900'
             }`}
             title="สกุลเงินกีบลาว (LAK)"
           >
@@ -134,10 +134,10 @@ export const Header: React.FC<HeaderProps> = ({ onMenuToggle }) => {
           <button
             type="button"
             onClick={() => setCurrency('USD')}
-            className={`px-2 py-1 rounded-md transition-all ${
+            className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
               currency === 'USD'
-                ? 'bg-white text-slate-900 shadow-xs'
-                : 'text-slate-500 hover:text-slate-800'
+                ? 'bg-white text-blue-700 shadow-xs font-bold border border-slate-200/60'
+                : 'text-slate-600 hover:text-slate-900'
             }`}
             title="สกุลเงินดอลลาร์สหรัฐ (USD)"
           >
@@ -150,7 +150,7 @@ export const Header: React.FC<HeaderProps> = ({ onMenuToggle }) => {
           <select
             value={language}
             onChange={(e) => setLanguage(e.target.value as Language)}
-            className="text-xs font-medium bg-slate-50 text-slate-700 border border-slate-200 rounded-lg py-1.5 pl-2.5 pr-7 hover:bg-slate-100 focus:outline-hidden focus:ring-1 focus:ring-slate-300 transition-colors cursor-pointer appearance-none"
+            className="text-xs font-semibold bg-white text-slate-700 border border-slate-200 rounded-xl py-1.5 pl-3 pr-7 hover:border-blue-400 focus:outline-hidden focus:ring-1 focus:ring-blue-500 transition-colors cursor-pointer appearance-none shadow-2xs"
           >
             <option value="th">🇹🇭 ไทย</option>
             <option value="lo">🇱🇦 ລາວ</option>
@@ -166,7 +166,7 @@ export const Header: React.FC<HeaderProps> = ({ onMenuToggle }) => {
             type="button"
             onClick={seedDemoData}
             disabled={loading}
-            className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 border border-blue-200 text-blue-700 hover:bg-blue-100 rounded-lg text-xs font-medium transition-colors"
+            className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 border border-blue-200 text-blue-700 hover:bg-blue-100 rounded-xl text-xs font-semibold transition-colors cursor-pointer"
             title="คลิกเพื่อลงข้อมูลตัวอย่างสินค้าและคู่ค้า"
           >
             <Sparkles className="w-3.5 h-3.5 text-blue-600" />

@@ -152,29 +152,29 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
       {/* Main Sidebar */}
       <aside
-        className={`fixed top-0 bottom-0 left-0 z-50 flex flex-col bg-slate-900 text-slate-200 transition-all duration-300 ease-in-out border-r border-slate-800 ${
+        className={`fixed top-0 bottom-0 left-0 z-50 flex flex-col bg-white text-slate-800 transition-all duration-300 ease-in-out border-r border-slate-200 shadow-xs ${
           collapsed ? 'w-20' : 'w-64'
         } ${mobileOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}
       >
         {/* Brand Header */}
-        <div className="flex items-center justify-between h-16 px-4 border-b border-slate-800/80 bg-slate-950/40">
+        <div className="flex items-center justify-between h-16 px-4 border-b border-slate-200/90 bg-white">
           <div className="flex items-center gap-3 overflow-hidden">
             <div className="w-9 h-9 rounded-xl bg-blue-600 flex items-center justify-center text-white shrink-0 shadow-xs">
               <Store className="w-5 h-5" />
             </div>
             {!collapsed && (
               <div className="truncate">
-                <h1 className="font-bold text-white text-sm tracking-tight truncate leading-tight">
+                <h1 className="font-bold text-slate-900 text-sm tracking-tight truncate leading-tight">
                   POS Wholesale & Retail
                 </h1>
-                <p className="text-[11px] text-slate-400 font-normal">ระบบจัดการร้านค้าครบวงจร</p>
+                <p className="text-[11px] text-slate-500 font-normal">ระบบจัดการร้านค้าครบวงจร</p>
               </div>
             )}
           </div>
 
           <button
             onClick={() => setCollapsed(!collapsed)}
-            className="hidden lg:flex items-center justify-center w-7 h-7 text-slate-400 hover:text-white hover:bg-slate-800/80 rounded-lg transition-colors cursor-pointer"
+            className="hidden lg:flex items-center justify-center w-7 h-7 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
             title={collapsed ? 'ขยายเมนู' : 'ย่อเมนู'}
           >
             {collapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
@@ -183,17 +183,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
         {/* User Card & Role Switcher */}
         {!collapsed ? (
-          <div className="mx-3 my-2.5 p-2.5 bg-slate-800/50 border border-slate-700/50 rounded-xl">
+          <div className="mx-3 my-2.5 p-2.5 bg-blue-50/50 border border-blue-100/90 rounded-xl">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2 min-w-0">
-                <div className="w-7 h-7 rounded-lg bg-blue-600/30 text-blue-300 flex items-center justify-center text-xs font-semibold shrink-0">
+                <div className="w-7 h-7 rounded-lg bg-blue-600 text-white flex items-center justify-center text-xs font-bold shrink-0 shadow-2xs">
                   {currentUser?.displayName ? currentUser.displayName.slice(0, 1) : 'U'}
                 </div>
                 <div className="truncate">
-                  <p className="text-xs font-semibold text-white truncate leading-tight">
+                  <p className="text-xs font-bold text-slate-900 truncate leading-tight">
                     {currentUser?.displayName || 'User'}
                   </p>
-                  <p className="text-[10px] text-slate-400 truncate">
+                  <p className="text-[10px] text-blue-700 font-medium truncate">
                     {roleDisplayNames[currentUser?.role || 'staff']}
                   </p>
                 </div>
@@ -202,7 +202,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <button
                 type="button"
                 onClick={() => setRoleSwitcherOpen(!roleSwitcherOpen)}
-                className="p-1 text-slate-400 hover:text-white hover:bg-slate-700/60 rounded-md transition-colors"
+                className="p-1 text-slate-400 hover:text-blue-700 hover:bg-white/80 rounded-md transition-colors"
                 title="สลับสิทธิ์การใช้งานเพื่อทดสอบ"
               >
                 <ChevronDown className={`w-3.5 h-3.5 transition-transform ${roleSwitcherOpen ? 'rotate-180' : ''}`} />
@@ -211,7 +211,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
             {/* Quick 4-role switcher dropdown */}
             {roleSwitcherOpen && (
-              <div className="grid grid-cols-2 gap-1.5 mt-2.5 pt-2 border-t border-slate-700/50 text-[11px]">
+              <div className="grid grid-cols-2 gap-1.5 mt-2.5 pt-2 border-t border-blue-100 text-[11px]">
                 {(['owner', 'admin', 'manager', 'staff'] as const).map((r) => (
                   <button
                     key={r}
@@ -222,8 +222,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     }}
                     className={`py-1 px-2 rounded-lg text-left transition ${
                       currentUser?.role === r
-                        ? 'bg-blue-600 text-white font-semibold'
-                        : 'text-slate-300 hover:bg-slate-700/50'
+                        ? 'bg-blue-600 text-white font-semibold shadow-xs'
+                        : 'text-slate-700 hover:bg-white hover:text-blue-700'
                     }`}
                   >
                     {r === 'owner' ? '👑 เจ้าของร้าน' : r === 'admin' ? '🛡️ แอดมิน' : r === 'manager' ? '👔 ผู้จัดการ' : '🛒 พนักงานขาย'}
@@ -233,7 +233,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             )}
           </div>
         ) : (
-          <div className="flex justify-center py-2.5 border-b border-slate-800">
+          <div className="flex justify-center py-2.5 border-b border-slate-100">
             <button
               onClick={() => {
                 const roleCycle: Record<string, UserRole> = {
@@ -246,9 +246,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 switchUserRole(roleCycle[currentUser?.role || 'owner'] || 'owner');
               }}
               title={`สิทธิ์ปัจจุบัน: ${currentUser?.role || 'staff'} (คลิกเพื่อเปลี่ยน)`}
-              className="w-9 h-9 rounded-xl bg-slate-800 text-slate-300 hover:text-white hover:bg-slate-700 flex items-center justify-center transition-colors"
+              className="w-9 h-9 rounded-xl bg-blue-50 text-blue-600 hover:bg-blue-100 border border-blue-200/80 flex items-center justify-center transition-colors cursor-pointer"
             >
-              <ShieldCheck className="w-4 h-4 text-blue-400" />
+              <ShieldCheck className="w-4 h-4 text-blue-600" />
             </button>
           </div>
         )}
@@ -262,7 +262,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             return (
               <div key={gIdx} className="space-y-1">
                 {!collapsed && (
-                  <div className="px-3 text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-1">
+                  <div className="px-3 text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
                     {group.groupLabel}
                   </div>
                 )}
@@ -275,24 +275,26 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     <button
                       key={item.id}
                       onClick={() => handleNavClick(item.id)}
-                      className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium transition-colors relative cursor-pointer ${
+                      className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold transition-all relative cursor-pointer group ${
                         isActive
                           ? item.highlight
-                            ? 'bg-blue-600 text-white font-semibold shadow-xs'
-                            : 'bg-slate-800 text-white font-semibold'
+                            ? 'bg-blue-600 text-white font-bold shadow-xs hover:bg-blue-700'
+                            : 'bg-blue-50 text-blue-700 font-bold border border-blue-200/80 shadow-2xs'
                           : item.highlight
-                          ? 'text-blue-400 hover:bg-slate-800/60'
-                          : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/40'
+                          ? 'text-blue-600 hover:bg-blue-50/80 hover:text-blue-700 font-bold'
+                          : 'text-slate-600 hover:text-blue-600 hover:bg-slate-50'
                       } ${collapsed ? 'justify-center px-0' : ''}`}
                       title={collapsed ? item.label : undefined}
                     >
                       <Icon
-                        className={`w-4 h-4 shrink-0 ${
+                        className={`w-4 h-4 shrink-0 transition-colors ${
                           isActive
                             ? item.highlight
                               ? 'text-white'
-                              : 'text-blue-400'
-                            : 'text-slate-400'
+                              : 'text-blue-600'
+                            : item.highlight
+                            ? 'text-blue-600'
+                            : 'text-slate-400 group-hover:text-blue-600'
                         }`}
                       />
                       {!collapsed && <span className="truncate">{item.label}</span>}
@@ -319,15 +321,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
         {/* Low Stock Warning Box (Clean, minimal) */}
         {!collapsed && totalStockAlerts > 0 && (
-          <div className="p-2.5 mx-3 mb-2 bg-amber-950/30 border border-amber-800/40 rounded-xl text-amber-300 text-xs">
+          <div className="p-2.5 mx-3 mb-2 bg-amber-50 border border-amber-200/80 rounded-xl text-amber-800 text-xs">
             <div className="flex items-center justify-between">
               <span className="flex items-center gap-1.5 font-semibold text-[11px]">
-                <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                <AlertTriangle className="w-3.5 h-3.5 text-amber-500 shrink-0" />
                 <span>สินค้าใกล้หมด ({totalStockAlerts})</span>
               </span>
               <button
                 onClick={() => handleNavClick('inventory')}
-                className="text-[10px] text-amber-200 underline hover:text-white"
+                className="text-[10px] text-amber-700 font-bold underline hover:text-amber-900 cursor-pointer"
               >
                 ดูสต็อก
               </button>
@@ -336,10 +338,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
         )}
 
         {/* Logout Button */}
-        <div className="p-3 border-t border-slate-800">
+        <div className="p-3 border-t border-slate-200">
           <button
             onClick={logout}
-            className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs font-medium text-slate-400 hover:text-red-400 hover:bg-slate-800/60 rounded-lg transition-colors cursor-pointer ${
+            className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-slate-500 hover:text-red-600 hover:bg-red-50 rounded-xl transition-colors cursor-pointer ${
               collapsed ? 'justify-center px-0' : ''
             }`}
             title="ออกจากระบบ (Sign Out)"

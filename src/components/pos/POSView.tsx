@@ -537,13 +537,13 @@ export const POSView: React.FC = () => {
               <button
                 onClick={() => setMobileSubTab('cart')}
                 className={`min-h-[36px] px-3 py-1 rounded-lg flex items-center gap-1 transition cursor-pointer ${
-                  mobileSubTab === 'cart' ? 'bg-slate-900 text-white shadow-xs' : 'text-slate-600'
+                  mobileSubTab === 'cart' ? 'bg-blue-600 text-white shadow-xs font-bold' : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
                 <ShoppingCart className="w-3.5 h-3.5" />
                 <span>ตะกร้า</span>
                 {cartTotals.itemCount > 0 && (
-                  <span className="ml-0.5 px-1.5 py-0.2 rounded-full text-[10px] bg-blue-500 text-white font-mono font-bold">
+                  <span className="ml-0.5 px-1.5 py-0.2 rounded-full text-[10px] bg-white text-blue-700 font-mono font-bold">
                     {cartTotals.itemCount}
                   </span>
                 )}
@@ -551,7 +551,7 @@ export const POSView: React.FC = () => {
               <button
                 onClick={() => setMobileSubTab('catalog')}
                 className={`min-h-[36px] px-3 py-1 rounded-lg flex items-center gap-1 transition cursor-pointer ${
-                  mobileSubTab === 'catalog' ? 'bg-slate-900 text-white shadow-xs' : 'text-slate-600'
+                  mobileSubTab === 'catalog' ? 'bg-blue-600 text-white shadow-xs font-bold' : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
                 <Grid className="w-3.5 h-3.5" />
@@ -763,13 +763,13 @@ export const POSView: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => setIsCameraScannerOpen(true)}
-                    className="w-full min-h-[48px] py-2.5 px-4 bg-slate-900 hover:bg-slate-800 active:scale-[0.99] text-white rounded-2xl font-bold text-sm shadow-md flex items-center justify-center gap-2.5 transition cursor-pointer"
+                    className="w-full min-h-[48px] py-2.5 px-4 bg-blue-600 hover:bg-blue-700 active:scale-[0.99] text-white rounded-2xl font-bold text-sm shadow-xs flex items-center justify-center gap-2.5 transition cursor-pointer"
                   >
                     <div className="w-7 h-7 rounded-lg bg-white/20 flex items-center justify-center shrink-0">
-                      <Camera className="w-4 h-4 text-emerald-400" />
+                      <Camera className="w-4 h-4 text-white" />
                     </div>
                     <span>เปิดกล้องสแกนบาร์โค้ด (Camera Scanner)</span>
-                    <span className="text-[10px] bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 px-1.5 py-0.5 rounded-full font-normal">
+                    <span className="text-[10px] bg-blue-500/40 text-blue-100 border border-blue-400/30 px-2 py-0.5 rounded-full font-semibold">
                       พร้อมใช้งาน
                     </span>
                   </button>
@@ -876,9 +876,9 @@ export const POSView: React.FC = () => {
                         <button
                           type="button"
                           onClick={() => setIsCameraScannerOpen(true)}
-                          className="min-h-[44px] flex-1 px-3 py-2 bg-slate-900 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 shadow-xs active:scale-95 cursor-pointer"
+                          className="min-h-[44px] flex-1 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 shadow-xs active:scale-95 cursor-pointer"
                         >
-                          <Camera className="w-4 h-4 text-emerald-400" />
+                          <Camera className="w-4 h-4 text-white" />
                           <span>สแกนด้วยกล้อง</span>
                         </button>
                         <button
@@ -1081,8 +1081,8 @@ export const POSView: React.FC = () => {
                     onClick={() => setSelectedCategory('all')}
                     className={`min-h-[40px] px-3.5 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition cursor-pointer ${
                       selectedCategory === 'all'
-                        ? 'bg-slate-900 text-white shadow-xs'
-                        : 'bg-white text-slate-600 hover:bg-slate-50 border border-slate-200/80'
+                        ? 'bg-blue-600 text-white font-bold shadow-xs'
+                        : 'bg-white text-slate-700 hover:bg-blue-50/60 border border-slate-200'
                     }`}
                   >
                     ทั้งหมด ({products.length})
@@ -1093,8 +1093,8 @@ export const POSView: React.FC = () => {
                       onClick={() => setSelectedCategory(cat.id)}
                       className={`min-h-[40px] px-3.5 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition cursor-pointer ${
                         selectedCategory === cat.id
-                          ? 'bg-slate-900 text-white shadow-xs'
-                          : 'bg-white text-slate-600 hover:bg-slate-50 border border-slate-200/80'
+                          ? 'bg-blue-600 text-white font-bold shadow-xs'
+                          : 'bg-white text-slate-700 hover:bg-blue-50/60 border border-slate-200'
                       }`}
                     >
                       {cat.name}
@@ -1182,13 +1182,13 @@ export const POSView: React.FC = () => {
                   <div className="fixed bottom-4 left-4 right-4 z-30 pb-[env(safe-area-inset-bottom)]">
                     <button
                       onClick={() => setMobileSubTab('cart')}
-                      className="w-full min-h-[50px] bg-slate-900 hover:bg-slate-800 text-white px-4 py-3 rounded-2xl font-bold text-sm shadow-xl flex items-center justify-between active:scale-[0.99] cursor-pointer"
+                      className="w-full min-h-[50px] bg-blue-600 hover:bg-blue-700 text-white px-4 py-3 rounded-2xl font-bold text-sm shadow-xl flex items-center justify-between active:scale-[0.99] cursor-pointer"
                     >
                       <div className="flex items-center gap-2">
-                        <ShoppingCart className="w-4 h-4 text-emerald-400" />
+                        <ShoppingCart className="w-4 h-4 text-white" />
                         <span>กลับไปที่ตะกร้า ({cartTotals.itemCount} ชิ้น)</span>
                       </div>
-                      <div className="flex items-center gap-1 font-black text-emerald-300">
+                      <div className="flex items-center gap-1 font-black text-white">
                         <span>{formatCurrency(cartTotals.grandTotal, currency)}</span>
                         <ArrowRight className="w-4 h-4" />
                       </div>
@@ -1288,7 +1288,7 @@ export const POSView: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => setIsCameraScannerOpen(true)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-semibold shadow-xs transition active:scale-95 cursor-pointer"
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold shadow-xs transition active:scale-95 cursor-pointer"
                   >
                     <Camera className="w-3.5 h-3.5" />
                     <span>เปิดกล้องสแกน</span>
@@ -1382,8 +1382,8 @@ export const POSView: React.FC = () => {
                 onClick={() => setSelectedCategory('all')}
                 className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition cursor-pointer ${
                   selectedCategory === 'all'
-                    ? 'bg-slate-900 text-white shadow-xs'
-                    : 'bg-white text-slate-600 hover:bg-slate-50 border border-slate-200/80 hover:border-slate-300'
+                    ? 'bg-blue-600 text-white font-bold shadow-xs'
+                    : 'bg-white text-slate-700 hover:bg-blue-50/60 border border-slate-200'
                 }`}
               >
                 ทั้งหมด ({products.length})
@@ -1394,8 +1394,8 @@ export const POSView: React.FC = () => {
                   onClick={() => setSelectedCategory(cat.id)}
                   className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition cursor-pointer ${
                     selectedCategory === cat.id
-                      ? 'bg-slate-900 text-white shadow-xs'
-                      : 'bg-white text-slate-600 hover:bg-slate-50 border border-slate-200/80 hover:border-slate-300'
+                      ? 'bg-blue-600 text-white font-bold shadow-xs'
+                      : 'bg-white text-slate-700 hover:bg-blue-50/60 border border-slate-200'
                   }`}
                 >
                   {cat.name}
@@ -2039,11 +2039,11 @@ export const POSView: React.FC = () => {
       {isCustomerModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
           <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden flex flex-col max-h-[85vh]">
-            <div className="p-4 bg-slate-900 text-white flex items-center justify-between">
-              <h3 className="font-bold text-sm">เลือกลูกค้าสำหรับบิลนี้</h3>
+            <div className="p-4 bg-white border-b border-slate-200 text-slate-900 flex items-center justify-between">
+              <h3 className="font-bold text-sm text-slate-900">เลือกลูกค้าสำหรับบิลนี้</h3>
               <button
                 onClick={() => setIsCustomerModalOpen(false)}
-                className="p-1 text-slate-400 hover:text-white"
+                className="p-1 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>

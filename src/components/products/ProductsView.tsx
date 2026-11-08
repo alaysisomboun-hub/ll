@@ -441,7 +441,7 @@ export const ProductsView: React.FC = () => {
               setCameraModalTarget('search');
               setIsCameraModalOpen(true);
             }}
-            className="flex items-center gap-1.5 px-3 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-semibold transition shadow-xs cursor-pointer shrink-0"
+            className="flex items-center gap-1.5 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold transition shadow-xs cursor-pointer shrink-0"
           >
             <Camera className="w-3.5 h-3.5" />
             <span className="hidden sm:inline">เปิดกล้องสแกน</span>
@@ -568,8 +568,8 @@ export const ProductsView: React.FC = () => {
             onClick={() => setSelectedCategory('all')}
             className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition cursor-pointer ${
               selectedCategory === 'all'
-                ? 'bg-slate-900 text-white shadow-xs'
-                : 'bg-slate-50 text-slate-600 hover:bg-slate-100 border border-slate-200/80'
+                ? 'bg-blue-600 text-white shadow-xs font-bold'
+                : 'bg-slate-50 text-slate-700 hover:bg-blue-50/60 border border-slate-200'
             }`}
           >
             ทั้งหมด ({products.length})
@@ -584,8 +584,8 @@ export const ProductsView: React.FC = () => {
                 onClick={() => setSelectedCategory(c.id)}
                 className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition cursor-pointer flex items-center gap-1.5 ${
                   isSelected
-                    ? 'bg-blue-600 text-white shadow-xs'
-                    : 'bg-slate-50 text-slate-600 hover:bg-slate-100 border border-slate-200/80'
+                    ? 'bg-blue-600 text-white shadow-xs font-bold'
+                    : 'bg-slate-50 text-slate-700 hover:bg-blue-50/60 border border-slate-200'
                 }`}
               >
                 <span>{c.name}</span>
@@ -614,7 +614,7 @@ export const ProductsView: React.FC = () => {
       <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs md:text-sm">
-            <thead className="bg-slate-50 text-slate-600 font-semibold border-b border-slate-200 text-xs">
+            <thead className="bg-blue-50/50 text-slate-700 font-semibold border-b border-slate-200 text-xs">
               <tr>
                 <th className="py-3 px-4">รูปภาพ</th>
                 <th className="py-3 px-4">รหัส / บาร์โค้ด</th>
@@ -642,7 +642,7 @@ export const ProductsView: React.FC = () => {
                   const isLow = p.stockQty <= (p.minStockAlert || 10) && !isOutOfStock;
 
                   return (
-                    <tr key={p.id} className="hover:bg-slate-50/80 transition">
+                    <tr key={p.id} className="hover:bg-blue-50/40 transition">
                       {/* Image */}
                       <td className="py-3 px-4 w-14">
                         <div className="w-10 h-10 rounded-lg bg-slate-100 overflow-hidden flex items-center justify-center border border-slate-200">

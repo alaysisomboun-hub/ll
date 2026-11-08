@@ -2,14 +2,25 @@
 
 @layer base {
   :root {
+    /* Blue & White Design Tokens (ตามข้อกำหนด 1) */
+    --color-primary-blue: #2563EB;
+    --color-dark-blue: #1E40AF;
+    --color-light-blue: #DBEAFE;
+    --color-surface-blue: #EFF6FF;
+    --color-white: #FFFFFF;
+    --color-bg: #F1F5F9;
+    --color-text-primary: #1E293B;
+    --color-text-secondary: #64748B;
+    --color-border: #E2E8F0;
+
     --font-sans: 'IBM Plex Sans Thai', 'Plus Jakarta Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   }
 
   body {
     font-family: var(--font-sans);
-    background-color: #f8fafc;
-    color: #0f172a;
+    background-color: #F1F5F9;
+    color: #1E293B;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
@@ -21,7 +32,7 @@
   }
 }
 
-/* Custom Minimalist Scrollbar */
+/* Custom Minimalist Blue & Slate Scrollbar */
 .custom-scrollbar::-webkit-scrollbar {
   width: 6px;
   height: 6px;
@@ -37,5 +48,30 @@
 }
 
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: rgba(100, 116, 139, 0.6);
+  background: #2563EB;
+}
+
+/* Blue & White Theme Helper Classes */
+.bw-card {
+  background-color: #FFFFFF;
+  border: 1px solid #E2E8F0;
+  border-radius: 1rem;
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.03);
+}
+
+.bw-card-hover {
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.bw-card-hover:hover {
+  border-color: #BFDBFE;
+  box-shadow: 0 4px 14px 0 rgba(37, 99, 235, 0.08);
+}
+
+.bw-table-row {
+  transition: background-color 0.15s ease-in-out;
+}
+
+.bw-table-row:hover {
+  background-color: rgba(239, 246, 255, 0.7);
 }
