@@ -176,7 +176,7 @@ export const ProductsView: React.FC = () => {
     setEditingProduct(null);
     setFormData({
       sku: generateSku(),
-      barcode: generateBarcode(),
+      barcode: '',
       name: '',
       categoryId: categories[0]?.id || '',
       unit: 'ชิ้น',

@@ -10,29 +10,26 @@ import {
   AlertCircle,
   Barcode,
   Volume2,
-  Monitor,
   Smartphone,
   Tablet,
   Laptop,
-  Layers,
   Settings2,
-  Sparkles,
   Bug,
-  Database,
-  ArrowRight,
-  ShieldAlert,
+  SwitchCamera,
+  Focus,
 } from 'lucide-react';
 import {
   MultiFormatReader,
   BarcodeFormat,
   DecodeHintType,
-  RGBLuminanceSource,
   BinaryBitmap,
   HybridBinarizer,
-  NotFoundException,
+  GlobalHistogramBinarizer,
+  HTMLCanvasElementLuminanceSource,
 } from '@zxing/library';
-import { playScanSuccessSound, playScanErrorSound } from '../../utils/audio';
+import { playScanSuccessSound } from '../../utils/audio';
 import { detectUserDevice, DeviceInfo } from '../../utils/deviceDetector';
+import { validateBarcode } from '../../utils/barcodeValidator';
 import { Product } from '../../types/pos';
 
 export interface CameraBarcodeScannerModalProps {
@@ -63,6 +60,7 @@ export const CameraBarcodeScannerModal: React.FC<CameraBarcodeScannerModalProps>
   // Camera stream states
   const [cameras, setCameras] = useState<MediaDeviceInfo[]>([]);
   const [selectedDeviceId, setSelectedDeviceId] = useState<string>('');
+  const [activeCameraLabel, setActiveCameraLabel] = useState<string>('');
   const [cameraActive, setCameraActive] = useState<boolean>(true);
   const [cameraError, setCameraError] = useState<string>('');
   const [isInitializing, setIsInitializing] = useState<boolean>(false);
@@ -74,19 +72,26 @@ export const CameraBarcodeScannerModal: React.FC<CameraBarcodeScannerModalProps>
   // Torch / Focus capability
   const [torchEnabled, setTorchEnabled] = useState<boolean>(false);
   const [hasTorchCapability, setHasTorchCapability] = useState<boolean>(false);
+  const [hasContinuousFocus, setHasContinuousFocus] = useState<boolean>(false);
 
   // Scanning results & feedback
   const [lastScanned, setLastScanned] = useState<string>('');
   const [lastScannedFormat, setLastScannedFormat] = useState<string>('');
   const [manualCode, setManualCode] = useState<string>('');
   const [scanCount, setScanCount] = useState<number>(0);
-  const [fpsCount, setFpsCount] = useState<number>(0);
+  const [decoderFps, setDecoderFps] = useState<number>(12);
 
   // Debug Panel toggle
   const [isDebugOpen, setIsDebugOpen] = useState<boolean>(showDebugInfo);
-  const [activeEngine, setActiveEngine] = useState<'BarcodeDetector (Hardware)' | 'ZXing MultiFormat (Canvas)'>('ZXing MultiFormat (Canvas)');
+  const [activeEngine, setActiveEngine] = useState<string>('ZXing MultiFormat (Grayscale Buffer)');
 
-  // Duplicate Check against existing products
+  // Barcode validation of detected code
+  const validationResult = useMemo(() => {
+    if (!lastScanned) return null;
+    return validateBarcode(lastScanned);
+  }, [lastScanned]);
+
+  // Duplicate Check against existing products in database
   const matchedExistingProduct = useMemo(() => {
     if (!lastScanned) return null;
     return (
@@ -102,16 +107,17 @@ export const CameraBarcodeScannerModal: React.FC<CameraBarcodeScannerModalProps>
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const animationFrameIdRef = useRef<number | null>(null);
+  const centerCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const scanIntervalIdRef = useRef<number | null>(null);
   const zxingReaderRef = useRef<MultiFormatReader | null>(null);
   const isDecodingRef = useRef<boolean>(false);
   const lastScannedTimeRef = useRef<{ code: string; time: number }>({ code: '', time: 0 });
+  const fpsCounterRef = useRef<{ count: number; lastTime: number }>({ count: 0, lastTime: Date.now() });
 
-  // Native BarcodeDetector instance if supported by browser (Chrome/Edge/Android)
+  // Native BarcodeDetector instance if supported by browser (Chrome/Edge/Android/Safari 17+)
   const nativeDetectorRef = useRef<any>(null);
 
-  // Initialize ZXing MultiFormatReader with standard POS formats
+  // Initialize ZXing MultiFormatReader with all standard POS formats & TRY_HARDER
   const getOrCreateZxingReader = useCallback(() => {
     if (!zxingReaderRef.current) {
       const hints = new Map<DecodeHintType, any>();
@@ -144,19 +150,15 @@ export const CameraBarcodeScannerModal: React.FC<CameraBarcodeScannerModalProps>
         nativeDetectorRef.current = new BarcodeDetectorClass({
           formats: ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128', 'code_39', 'qr_code'],
         });
-        setActiveEngine('BarcodeDetector (Hardware)');
+        setActiveEngine('Native BarcodeDetector (Hardware)');
       } catch (err) {
-        console.debug('Native BarcodeDetector formats error:', err);
+        console.debug('Native BarcodeDetector initialization error:', err);
       }
     }
   }, []);
 
   // Stop camera tracks and cancel scan loops
   const stopCamera = useCallback(() => {
-    if (animationFrameIdRef.current) {
-      cancelAnimationFrame(animationFrameIdRef.current);
-      animationFrameIdRef.current = null;
-    }
     if (scanIntervalIdRef.current) {
       clearInterval(scanIntervalIdRef.current);
       scanIntervalIdRef.current = null;
@@ -178,9 +180,10 @@ export const CameraBarcodeScannerModal: React.FC<CameraBarcodeScannerModalProps>
     isDecodingRef.current = false;
     setTorchEnabled(false);
     setHasTorchCapability(false);
+    setHasContinuousFocus(false);
   }, []);
 
-  // Enumerate all video input devices
+  // Enumerate all video input devices with clean human-readable labels
   const refreshCameras = useCallback(async () => {
     try {
       if (!navigator.mediaDevices?.enumerateDevices) return [];
@@ -194,7 +197,7 @@ export const CameraBarcodeScannerModal: React.FC<CameraBarcodeScannerModalProps>
     }
   }, []);
 
-  // Handle successful barcode recognition
+  // Handle successful barcode recognition (strictly String format, preserving leading zeros)
   const handleBarcodeFound = useCallback(
     (code: string, formatName: string = '') => {
       const cleanCode = String(code).trim();
@@ -215,7 +218,7 @@ export const CameraBarcodeScannerModal: React.FC<CameraBarcodeScannerModalProps>
       setLastScannedFormat(formatName || 'BARCODE');
       setScanCount((prev) => prev + 1);
 
-      // Call parent callback
+      // Call parent callback with real barcode string
       onScan(cleanCode, formatName);
 
       if (!continuous) {
@@ -226,7 +229,7 @@ export const CameraBarcodeScannerModal: React.FC<CameraBarcodeScannerModalProps>
     [continuous, onClose, onScan, stopCamera]
   );
 
-  // Core Resilient Frame Decoding Loop
+  // Core Resilient Multi-Pass Frame Decoding Loop
   const decodeVideoFrame = useCallback(async () => {
     if (!videoRef.current || videoRef.current.readyState < 2 || isDecodingRef.current) {
       return;
@@ -244,8 +247,19 @@ export const CameraBarcodeScannerModal: React.FC<CameraBarcodeScannerModalProps>
 
     isDecodingRef.current = true;
 
+    // Track decoding FPS
+    const now = Date.now();
+    fpsCounterRef.current.count++;
+    if (now - fpsCounterRef.current.lastTime >= 1000) {
+      setDecoderFps(fpsCounterRef.current.count);
+      fpsCounterRef.current.count = 0;
+      fpsCounterRef.current.lastTime = now;
+    }
+
     try {
-      // ENGINE 1: Try Native Hardware BarcodeDetector first (Super-fast C++ engine)
+      // -------------------------------------------------------------
+      // PASS 1: Native Hardware BarcodeDetector (High speed C++ engine)
+      // -------------------------------------------------------------
       if (nativeDetectorRef.current) {
         try {
           const detected = await nativeDetectorRef.current.detect(video);
@@ -253,23 +267,26 @@ export const CameraBarcodeScannerModal: React.FC<CameraBarcodeScannerModalProps>
             const hit = detected[0];
             const raw = String(hit.rawValue || '').trim();
             if (raw) {
+              setActiveEngine('Native BarcodeDetector (Hardware)');
               handleBarcodeFound(raw, String(hit.format || '').toUpperCase());
               isDecodingRef.current = false;
               return;
             }
           }
         } catch {
-          // Native detector frame pass through
+          // Native detector frame pass through to ZXing
         }
       }
 
-      // ENGINE 2: ZXing MultiFormat Pure Canvas Decoder
+      // -------------------------------------------------------------
+      // PASS 2: ZXing MultiFormat with HTMLCanvasElementLuminanceSource
+      // -------------------------------------------------------------
       if (!canvasRef.current) {
         canvasRef.current = document.createElement('canvas');
       }
       const canvas = canvasRef.current;
 
-      // Optimize canvas resolution for barcode line analysis (downscale large 4K frames to max 1280 for performance)
+      // Downscale 4K / large frames to optimal 1080p/720p for fast barcode line detection
       const maxDim = 1280;
       let targetW = vWidth;
       let targetH = vHeight;
@@ -285,36 +302,93 @@ export const CameraBarcodeScannerModal: React.FC<CameraBarcodeScannerModalProps>
 
       if (ctx) {
         ctx.drawImage(video, 0, 0, targetW, targetH);
-        const imgData = ctx.getImageData(0, 0, targetW, targetH);
 
         const zxingReader = getOrCreateZxingReader();
-        const luminance = new RGBLuminanceSource(imgData.data, targetW, targetH);
-        const binaryBitmap = new BinaryBitmap(new HybridBinarizer(luminance));
+        setActiveEngine('ZXing MultiFormat (Grayscale Buffer)');
 
+        // 2A: Full frame scan with HybridBinarizer
         try {
+          const lumSource = new HTMLCanvasElementLuminanceSource(canvas, false);
+          const binaryBitmap = new BinaryBitmap(new HybridBinarizer(lumSource));
           const result = zxingReader.decodeWithState(binaryBitmap);
           if (result && result.getText()) {
             const raw = String(result.getText()).trim();
             const fmt = BarcodeFormat[result.getBarcodeFormat()] || 'ZXING';
             if (raw) {
               handleBarcodeFound(raw, fmt);
+              isDecodingRef.current = false;
+              return;
             }
           }
-        } catch (zxingErr) {
-          // NotFoundException is standard when frame has no barcode - safely ignore
+        } catch {
+          // Full frame pass didn't find, proceed to Center Crop Zone
+        } finally {
+          zxingReader.reset();
+        }
+
+        // 2B: Center Target Zone Scan (75% width, 55% height) for sharp 1D barcode focus
+        try {
+          if (!centerCanvasRef.current) {
+            centerCanvasRef.current = document.createElement('canvas');
+          }
+          const cCanvas = centerCanvasRef.current;
+          const cropW = Math.round(targetW * 0.75);
+          const cropH = Math.round(targetH * 0.55);
+          const cropX = Math.round((targetW - cropW) / 2);
+          const cropY = Math.round((targetH - cropH) / 2);
+
+          cCanvas.width = cropW;
+          cCanvas.height = cropH;
+          const cCtx = cCanvas.getContext('2d', { willReadFrequently: true });
+          if (cCtx) {
+            cCtx.drawImage(canvas, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
+            const cropLum = new HTMLCanvasElementLuminanceSource(cCanvas, false);
+            const cropBitmap = new BinaryBitmap(new HybridBinarizer(cropLum));
+            const cropResult = zxingReader.decodeWithState(cropBitmap);
+            if (cropResult && cropResult.getText()) {
+              const raw = String(cropResult.getText()).trim();
+              const fmt = BarcodeFormat[cropResult.getBarcodeFormat()] || 'ZXING_CENTER';
+              if (raw) {
+                handleBarcodeFound(raw, fmt);
+                isDecodingRef.current = false;
+                return;
+              }
+            }
+          }
+        } catch {
+          // Center crop pass didn't find
+        } finally {
+          zxingReader.reset();
+        }
+
+        // 2C: GlobalHistogramBinarizer Pass (Superior for low-contrast / glossy / faded barcodes)
+        try {
+          const lumSource = new HTMLCanvasElementLuminanceSource(canvas, false);
+          const histBitmap = new BinaryBitmap(new GlobalHistogramBinarizer(lumSource));
+          const histResult = zxingReader.decodeWithState(histBitmap);
+          if (histResult && histResult.getText()) {
+            const raw = String(histResult.getText()).trim();
+            const fmt = BarcodeFormat[histResult.getBarcodeFormat()] || 'ZXING_HIST';
+            if (raw) {
+              handleBarcodeFound(raw, fmt);
+              isDecodingRef.current = false;
+              return;
+            }
+          }
+        } catch {
+          // Histogram pass didn't find
         } finally {
           zxingReader.reset();
         }
       }
     } catch (frameErr) {
-      // Protect the loop from ever terminating unexpectedly
       console.debug('Transient scan frame error:', frameErr);
     } finally {
       isDecodingRef.current = false;
     }
   }, [getOrCreateZxingReader, handleBarcodeFound, streamResolution.height, streamResolution.width]);
 
-  // Start Camera Stream
+  // Start Camera Stream with Rear-Camera Priority on Mobile and Webcam on Laptop
   const startCamera = useCallback(async () => {
     stopCamera();
     setCameraError('');
@@ -328,54 +402,54 @@ export const CameraBarcodeScannerModal: React.FC<CameraBarcodeScannerModalProps>
       // Discover cameras
       const videoDevices = await refreshCameras();
 
-      // Pick target camera based on platform
-      let targetDeviceId = selectedDeviceId;
-
-      if (!targetDeviceId && videoDevices.length > 0) {
-        if (deviceInfo.type === 'mobile_phone' || deviceInfo.type === 'tablet') {
-          // Rear/environment camera on phones & tablets
-          const rearCam = videoDevices.find(
-            (d) =>
-              /back|rear|environment|หลัง/i.test(d.label) ||
-              /camera2 0|facing back/i.test(d.label)
-          );
-          targetDeviceId = rearCam ? rearCam.deviceId : videoDevices[videoDevices.length - 1].deviceId;
-        } else {
-          // Laptop / Desktop: prefer USB webcam or FaceTime HD / integrated webcam
-          const usbCam = videoDevices.find((d) => /usb|external|webcam/i.test(d.label));
-          targetDeviceId = usbCam ? usbCam.deviceId : videoDevices[0].deviceId;
-        }
-        setSelectedDeviceId(targetDeviceId);
-      }
-
-      // Video track constraints: 1280x720 HD with continuous autofocus
+      // Configure video constraints:
+      // On mobile/tablet: Always prefer facingMode: 'environment' (back camera) unless user picked a specific ID
       const videoConstraints: MediaTrackConstraints = {
         width: { ideal: 1280, min: 640 },
         height: { ideal: 720, min: 480 },
       };
 
-      if (targetDeviceId) {
-        videoConstraints.deviceId = { exact: targetDeviceId };
+      if (selectedDeviceId) {
+        videoConstraints.deviceId = { exact: selectedDeviceId };
+      } else if (deviceInfo.type === 'mobile_phone' || deviceInfo.type === 'tablet') {
+        // Enforce rear/environment camera on phones and tablets
+        videoConstraints.facingMode = { ideal: 'environment' };
       } else {
-        videoConstraints.facingMode = { ideal: deviceInfo.recommendedFacingMode };
+        // Laptop / Desktop: prefer webcam
+        const usbCam = videoDevices.find((d) => /usb|external|webcam/i.test(d.label));
+        if (usbCam) {
+          videoConstraints.deviceId = { exact: usbCam.deviceId };
+        }
       }
 
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: videoConstraints,
-        audio: false,
-      });
+      let stream: MediaStream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: videoConstraints,
+          audio: false,
+        });
+      } catch (strictErr) {
+        console.warn('Initial camera constraints failed, attempting fallback:', strictErr);
+        // Fallback: unconstrained video
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: deviceInfo.type === 'mobile_phone' ? { facingMode: 'environment' } : true,
+          audio: false,
+        });
+      }
 
       streamRef.current = stream;
 
-      // Track capabilities (torch / focus)
+      // Extract active track details and capabilities
       const track = stream.getVideoTracks()[0];
       if (track) {
+        setActiveCameraLabel(track.label || 'กล้องหลัก (Active Camera)');
         try {
           const capabilities = (track as any).getCapabilities?.() || {};
           if (capabilities.torch) {
             setHasTorchCapability(true);
           }
           if (capabilities.focusMode && capabilities.focusMode.includes('continuous')) {
+            setHasContinuousFocus(true);
             await (track as any).applyConstraints?.({
               advanced: [{ focusMode: 'continuous' }],
             });
@@ -385,22 +459,21 @@ export const CameraBarcodeScannerModal: React.FC<CameraBarcodeScannerModalProps>
         }
       }
 
-      // Refresh devices to get human-readable labels now that permission is active
+      // Re-enumerate devices now that camera permission is granted (all labels populated)
       await refreshCameras();
 
       if (videoRef.current) {
         const v = videoRef.current;
-        // iOS Safari required attributes
         v.setAttribute('playsinline', 'true');
         v.setAttribute('webkit-playsinline', 'true');
         v.srcObject = stream;
         await v.play();
       }
 
-      // Start Resilient Continuous Scan Interval (120ms interval for optimal decoding & battery balance)
+      // Start Resilient Continuous Scan Interval (85ms for smooth 12 FPS decoding)
       scanIntervalIdRef.current = window.setInterval(() => {
         decodeVideoFrame();
-      }, 120);
+      }, 85);
 
       setIsInitializing(false);
       setCameraActive(true);
@@ -426,12 +499,35 @@ export const CameraBarcodeScannerModal: React.FC<CameraBarcodeScannerModalProps>
     }
   }, [
     decodeVideoFrame,
-    deviceInfo.recommendedFacingMode,
     deviceInfo.type,
     refreshCameras,
     selectedDeviceId,
     stopCamera,
   ]);
+
+  // Switch to next camera in list (สลับกล้อง)
+  const handleSwitchCamera = () => {
+    if (cameras.length <= 1) return;
+    const currentIndex = cameras.findIndex((c) => c.deviceId === selectedDeviceId);
+    const nextIndex = (currentIndex + 1) % cameras.length;
+    const nextCamera = cameras[nextIndex];
+    setSelectedDeviceId(nextCamera.deviceId);
+  };
+
+  // Trigger manual continuous autofocus refocus
+  const handleTriggerRefocus = async () => {
+    if (!streamRef.current) return;
+    const track = streamRef.current.getVideoTracks()[0];
+    if (track) {
+      try {
+        await (track as any).applyConstraints?.({
+          advanced: [{ focusMode: 'continuous' }],
+        });
+      } catch (err) {
+        console.debug('Refocus error:', err);
+      }
+    }
+  };
 
   // Toggle Torch / Flashlight
   const toggleTorch = async () => {
@@ -470,10 +566,16 @@ export const CameraBarcodeScannerModal: React.FC<CameraBarcodeScannerModalProps>
     setManualCode('');
   };
 
-  // Start on modal open & cleanup on close
+  // Reset scan state on modal open & start camera
   useEffect(() => {
-    if (isOpen && cameraActive) {
-      startCamera();
+    if (isOpen) {
+      setLastScanned('');
+      setLastScannedFormat('');
+      setManualCode('');
+      setCameraError('');
+      if (cameraActive) {
+        startCamera();
+      }
     } else {
       stopCamera();
     }
@@ -502,27 +604,27 @@ export const CameraBarcodeScannerModal: React.FC<CameraBarcodeScannerModalProps>
       <div className="bg-slate-900 border border-slate-700/80 rounded-3xl shadow-2xl max-w-xl w-full overflow-hidden text-white flex flex-col max-h-[94vh]">
         {/* MODAL HEADER */}
         <div className="flex items-center justify-between p-4 border-b border-slate-800 bg-slate-900/90">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 min-w-0">
             <div className="w-10 h-10 rounded-2xl bg-blue-500/20 text-blue-400 border border-blue-500/30 flex items-center justify-center shrink-0">
               <Camera className="w-5 h-5" />
             </div>
-            <div>
+            <div className="min-w-0">
               <div className="flex items-center gap-2">
-                <h3 className="font-bold text-sm sm:text-base text-slate-100">{title}</h3>
-                <span className="hidden sm:inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700">
+                <h3 className="font-bold text-sm sm:text-base text-slate-100 truncate">{title}</h3>
+                <span className="hidden sm:inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700 shrink-0">
                   {deviceInfo.type === 'mobile_phone' && <Smartphone className="w-3 h-3 text-emerald-400" />}
                   {deviceInfo.type === 'tablet' && <Tablet className="w-3 h-3 text-emerald-400" />}
                   {deviceInfo.type === 'laptop_desktop' && <Laptop className="w-3 h-3 text-blue-400" />}
                   <span>{deviceInfo.platformName}</span>
                 </span>
               </div>
-              <p className="text-[11px] text-slate-400">
-                สแกนบาร์โค้ดลงฟอร์มอัตโนมัติ • รองรับ EAN-13, EAN-8, UPC, Code-128, Code-39, QR
+              <p className="text-[11px] text-slate-400 truncate">
+                {activeCameraLabel ? `กล้องที่ใช้งาน: ${activeCameraLabel}` : 'สแกนอัตโนมัติ • EAN-13, EAN-8, UPC, Code-128, Code-39, QR'}
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1.5 shrink-0">
             {/* Toggle Debug Overlay */}
             <button
               type="button"
@@ -575,7 +677,7 @@ export const CameraBarcodeScannerModal: React.FC<CameraBarcodeScannerModalProps>
               disabled={cameras.length === 0}
               className="flex-1 bg-slate-800 border border-slate-700 rounded-xl px-2.5 py-1.5 text-xs text-slate-200 focus:outline-hidden focus:ring-1 focus:ring-blue-500 truncate cursor-pointer"
             >
-              {cameras.length === 0 && <option value="">ตรวจพบกล้อง 1 ตัว (กล้องเริ่มต้น)</option>}
+              {cameras.length === 0 && <option value="">{activeCameraLabel || 'กำลังเชื่อมต่อกล้อง...'}</option>}
               {cameras.map((c, idx) => (
                 <option key={c.deviceId || idx} value={c.deviceId}>
                   {c.label || `กล้องตัวที่ ${idx + 1}`}
@@ -584,8 +686,49 @@ export const CameraBarcodeScannerModal: React.FC<CameraBarcodeScannerModalProps>
             </select>
           </div>
 
-          {/* Action buttons */}
+          {/* Action buttons: Switch Camera, Autofocus, Flash, Power */}
           <div className="flex items-center gap-1.5 shrink-0">
+            {/* Switch Camera Button (สลับกล้อง) */}
+            {cameras.length > 1 && (
+              <button
+                type="button"
+                onClick={handleSwitchCamera}
+                className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-blue-300 border border-blue-500/30 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition active:scale-95 cursor-pointer"
+                title="สลับไปกล้องตัวถัดไป"
+              >
+                <SwitchCamera className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">สลับกล้อง</span>
+              </button>
+            )}
+
+            {/* Continuous Autofocus Trigger */}
+            {hasContinuousFocus && cameraActive && (
+              <button
+                type="button"
+                onClick={handleTriggerRefocus}
+                className="p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl border border-slate-700 transition cursor-pointer"
+                title="ปรับโฟกัสกล้องใหม่"
+              >
+                <Focus className="w-4 h-4 text-emerald-400" />
+              </button>
+            )}
+
+            {/* Torch toggle if available */}
+            {hasTorchCapability && cameraActive && (
+              <button
+                type="button"
+                onClick={toggleTorch}
+                className={`p-1.5 rounded-xl border transition cursor-pointer ${
+                  torchEnabled
+                    ? 'bg-amber-400 text-slate-900 border-amber-300 font-bold'
+                    : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700'
+                }`}
+                title={torchEnabled ? 'ปิดไฟแฟลช' : 'เปิดไฟแฟลช'}
+              >
+                {torchEnabled ? <Zap className="w-4 h-4" /> : <ZapOff className="w-4 h-4" />}
+              </button>
+            )}
+
             {/* Toggle Camera Power */}
             <button
               type="button"
@@ -609,22 +752,6 @@ export const CameraBarcodeScannerModal: React.FC<CameraBarcodeScannerModalProps>
                 </>
               )}
             </button>
-
-            {/* Torch toggle if available */}
-            {hasTorchCapability && cameraActive && (
-              <button
-                type="button"
-                onClick={toggleTorch}
-                className={`p-1.5 rounded-xl border transition cursor-pointer ${
-                  torchEnabled
-                    ? 'bg-amber-400 text-slate-900 border-amber-300 font-bold'
-                    : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700'
-                }`}
-                title={torchEnabled ? 'ปิดไฟแฟลช' : 'เปิดไฟแฟลช'}
-              >
-                {torchEnabled ? <Zap className="w-4 h-4" /> : <ZapOff className="w-4 h-4" />}
-              </button>
-            )}
 
             {/* Refresh Camera */}
             <button
@@ -686,9 +813,9 @@ export const CameraBarcodeScannerModal: React.FC<CameraBarcodeScannerModalProps>
                 className="w-full h-full object-cover max-h-[380px]"
               />
 
-              {/* Viewfinder Overlay with Animated Laser Target */}
+              {/* Viewfinder Target Overlay */}
               <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
-                <div className="relative w-64 h-44 sm:w-72 sm:h-48 border-2 border-white/60 rounded-2xl shadow-[0_0_0_9999px_rgba(0,0,0,0.52)] flex flex-col justify-between p-2">
+                <div className="relative w-64 h-44 sm:w-76 sm:h-52 border-2 border-white/60 rounded-2xl shadow-[0_0_0_9999px_rgba(0,0,0,0.52)] flex flex-col justify-between p-2">
                   <div className="flex justify-between">
                     <div className="w-6 h-6 border-t-4 border-l-4 border-blue-400 rounded-tl-sm" />
                     <div className="w-6 h-6 border-t-4 border-r-4 border-blue-400 rounded-tr-sm" />
@@ -708,11 +835,11 @@ export const CameraBarcodeScannerModal: React.FC<CameraBarcodeScannerModalProps>
               <div className="absolute bottom-3 left-3 right-3 flex items-center justify-between pointer-events-auto">
                 <div className="flex items-center gap-1.5 bg-slate-900/85 backdrop-blur-md px-3 py-1.5 rounded-xl border border-slate-700/70 text-[11px] text-emerald-400 font-semibold shadow-md">
                   <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-                  <span>เอนจินสแกนสด: กำลังทำงาน</span>
+                  <span>เอนจินสแกนสด: กำลังทำงาน (~{decoderFps} FPS)</span>
                 </div>
 
                 <div className="bg-slate-900/85 backdrop-blur-md px-2.5 py-1.5 rounded-xl border border-slate-700/70 text-[11px] text-slate-300 font-mono">
-                  สแกนแล้ว {scanCount} ครั้ง
+                  {activeCameraLabel ? activeCameraLabel.slice(0, 20) : `สแกนแล้ว ${scanCount} ครั้ง`}
                 </div>
               </div>
             </>
@@ -740,7 +867,7 @@ export const CameraBarcodeScannerModal: React.FC<CameraBarcodeScannerModalProps>
           )}
 
           {/* DUPLICATE BARCODE ALERT BANNER INSIDE SCANNER */}
-          {matchedExistingProduct && (
+          {lastScanned && matchedExistingProduct && (
             <div className="absolute bottom-12 left-3 right-3 bg-amber-500/95 text-slate-950 px-3.5 py-2.5 rounded-2xl text-xs font-bold flex items-center justify-between shadow-xl backdrop-blur-md border border-amber-300">
               <div className="flex items-center gap-2 truncate">
                 <AlertCircle className="w-4 h-4 text-slate-900 shrink-0" />
@@ -752,7 +879,7 @@ export const CameraBarcodeScannerModal: React.FC<CameraBarcodeScannerModalProps>
           )}
         </div>
 
-        {/* LIVE DEBUG & DIAGNOSTIC PANEL (ข้อกำหนดข้อ 6) */}
+        {/* LIVE DEBUG & DIAGNOSTIC PANEL (ข้อกำหนดข้อ 7) */}
         {isDebugOpen && (
           <div className="p-3 bg-slate-950 border-t border-slate-800 font-mono text-[11px] space-y-2 text-slate-300 animate-in slide-in-from-top-2">
             <div className="flex items-center justify-between text-amber-400 font-bold border-b border-slate-800 pb-1 text-xs">
@@ -766,49 +893,87 @@ export const CameraBarcodeScannerModal: React.FC<CameraBarcodeScannerModalProps>
             </div>
 
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 pt-1 text-[10px] sm:text-[11px]">
+              {/* 1. Camera Status */}
               <div className="bg-slate-900 p-2 rounded-lg border border-slate-800">
                 <span className="text-slate-500 block">1. Camera Status:</span>
                 <span className={cameraActive ? 'text-emerald-400 font-bold' : 'text-rose-400'}>
                   {cameraActive ? '● Streaming (กำลังทำงาน)' : '○ Inactive (ปิดอยู่)'}
                 </span>
-                <span className="text-slate-400 block text-[9px] mt-0.5">
+                <span className="text-slate-400 block text-[9px] mt-0.5 truncate">
                   ความละเอียด: {streamResolution.width}x{streamResolution.height}
                 </span>
               </div>
 
+              {/* 2. Camera Device Name */}
               <div className="bg-slate-900 p-2 rounded-lg border border-slate-800">
-                <span className="text-slate-500 block">2. Scanner Engine:</span>
-                <span className="text-blue-400 font-bold">{activeEngine}</span>
-                <span className="text-slate-400 block text-[9px] mt-0.5">Dual-Engine Resilient</span>
-              </div>
-
-              <div className="bg-slate-900 p-2 rounded-lg border border-slate-800">
-                <span className="text-slate-500 block">3. Barcode Format:</span>
-                <span className="text-purple-400 font-bold">
-                  {lastScannedFormat || '(รอการตรวจจับ...)'}
+                <span className="text-slate-500 block">2. Camera Device Name:</span>
+                <span className="text-blue-300 font-bold truncate block" title={activeCameraLabel}>
+                  {activeCameraLabel || 'กล้องหลัก (Default Camera)'}
+                </span>
+                <span className="text-slate-400 block text-[9px] mt-0.5">
+                  พบอุปกรณ์กล้อง {cameras.length} ตัว
                 </span>
               </div>
 
+              {/* 3. Scanner Engine */}
               <div className="bg-slate-900 p-2 rounded-lg border border-slate-800">
-                <span className="text-slate-500 block">4. Detected Barcode:</span>
-                <span className="text-amber-400 font-bold truncate block">
-                  {lastScanned || '(ยังไม่พบบาร์โค้ด)'}
+                <span className="text-slate-500 block">3. Scanner Engine:</span>
+                <span className="text-blue-400 font-bold truncate block">{activeEngine}</span>
+                <span className="text-slate-400 block text-[9px] mt-0.5">
+                  ความถี่: ~{decoderFps} FPS
                 </span>
               </div>
 
+              {/* 4. Barcode Format */}
               <div className="bg-slate-900 p-2 rounded-lg border border-slate-800">
-                <span className="text-slate-500 block">5. Form Barcode Value:</span>
-                <span className="text-emerald-400 font-bold truncate block">
-                  {lastScanned || currentFormBarcode || '(ว่าง)'}
+                <span className="text-slate-500 block">4. Barcode Format:</span>
+                <span className={lastScannedFormat ? 'text-purple-400 font-bold' : 'text-slate-400'}>
+                  {lastScannedFormat || 'Waiting for Barcode Detection'}
+                </span>
+                {validationResult?.message && (
+                  <span className="text-slate-400 block text-[9px] mt-0.5 truncate">
+                    {validationResult.message}
+                  </span>
+                )}
+              </div>
+
+              {/* 5. Raw Detected Barcode */}
+              <div className="bg-slate-900 p-2 rounded-lg border border-slate-800">
+                <span className="text-slate-500 block">5. Raw Detected Barcode:</span>
+                <span className={lastScanned ? 'text-amber-400 font-bold truncate block' : 'text-slate-400'}>
+                  {lastScanned || 'Waiting for Barcode Detection'}
+                </span>
+                {lastScanned && (
+                  <span className="text-emerald-400 block text-[9px] mt-0.5 font-bold">
+                    ✓ ตรวจจับได้จริงจากกล้อง
+                  </span>
+                )}
+              </div>
+
+              {/* 6. Form Barcode Value */}
+              <div className="bg-slate-900 p-2 rounded-lg border border-slate-800">
+                <span className="text-slate-500 block">6. Form Barcode Value:</span>
+                <span className="text-emerald-300 font-bold truncate block">
+                  {lastScanned || currentFormBarcode || '(ยังไม่มีรหัสในฟอร์ม)'}
+                </span>
+                <span className="text-slate-400 block text-[9px] mt-0.5">
+                  {lastScanned ? 'อัปเดตจากกล้องแล้ว' : 'ค่าเดิมในฟอร์ม'}
                 </span>
               </div>
 
-              <div className="bg-slate-900 p-2 rounded-lg border border-slate-800">
-                <span className="text-slate-500 block">6. Save / Duplicate Status:</span>
-                {matchedExistingProduct ? (
-                  <span className="text-amber-400 font-bold">⚠️ มีสินค้าในระบบแล้ว</span>
+              {/* 7. Duplicate / Save Status */}
+              <div className="bg-slate-900 p-2 rounded-lg border border-slate-800 sm:col-span-3">
+                <span className="text-slate-500 block">7. Firebase Duplicate Check Status:</span>
+                {!lastScanned ? (
+                  <span className="text-slate-400">Waiting for Barcode Detection</span>
+                ) : matchedExistingProduct ? (
+                  <span className="text-amber-400 font-bold">
+                    ⚠️ รหัสซ้ำกับสินค้าในระบบ: "{matchedExistingProduct.name}" (SKU: {matchedExistingProduct.sku})
+                  </span>
                 ) : (
-                  <span className="text-emerald-400 font-bold">✓ รหัสไม่ซ้ำ พร้อมบันทึก</span>
+                  <span className="text-emerald-400 font-bold">
+                    ✓ รหัสไม่ซ้ำในระบบ Firebase พร้อมบันทึกสินค้าใหม่ได้ทันที
+                  </span>
                 )}
               </div>
             </div>
