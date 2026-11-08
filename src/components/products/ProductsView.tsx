@@ -1155,11 +1155,20 @@ export const ProductsView: React.FC = () => {
           const cleanCode = String(code).trim();
           if (cameraModalTarget === 'form') {
             setFormData((prev) => ({ ...prev, barcode: cleanCode }));
-            showToast(`สแกนรหัสบาร์โค้ด "${cleanCode}" ใส่ช่อง Barcode สำเร็จ`, 'success');
+            // Immediate duplicate check against existing products
+            const dup = products.find(
+              (p) => p.barcode === cleanCode && (!editingProduct || p.id !== editingProduct.id)
+            );
+            if (dup) {
+              showToast(`⚠️ รหัสบาร์โค้ด "${cleanCode}" ซ้ำกับสินค้า "${dup.name}" ที่มีอยู่ในระบบแล้ว`, 'warning');
+            } else {
+              showToast(`สแกนรหัสบาร์โค้ด "${cleanCode}" ใส่ช่อง Barcode สำเร็จ`, 'success');
+            }
           } else {
             handleScanToSearchOrAdd(cleanCode);
           }
         }}
+        autoClose={true}
         continuous={false}
         title={
           cameraModalTarget === 'form'

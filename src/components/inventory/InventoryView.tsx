@@ -650,6 +650,7 @@ export const InventoryView: React.FC = () => {
         isOpen={isCameraScannerOpen}
         onClose={() => setIsCameraScannerOpen(false)}
         onScan={handleBarcodeScanned}
+        autoClose={true}
         continuous={false}
         title="สแกนบาร์โค้ดสินค้าในคลัง (Inventory Barcode Scanner)"
         existingProducts={products}

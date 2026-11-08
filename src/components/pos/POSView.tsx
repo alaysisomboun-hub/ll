@@ -2200,7 +2200,8 @@ export const POSView: React.FC = () => {
         isOpen={isCameraScannerOpen}
         onClose={() => setIsCameraScannerOpen(false)}
         onScan={(code) => processScannedBarcode(code, scanQuantity)}
-        continuous={true}
+        autoClose={true}
+        continuous={false}
         title="กล้องสแกนบาร์โค้ดขายสินค้า (POS Universal Scanner)"
         existingProducts={products}
         onOpenDiagnostics={() => {

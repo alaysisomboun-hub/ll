@@ -37,6 +37,7 @@ export interface CameraBarcodeScannerModalProps {
   onClose: () => void;
   onScan: (barcode: string, formatName?: string) => void;
   title?: string;
+  autoClose?: boolean;
   continuous?: boolean;
   onOpenDiagnostics?: () => void;
   showDebugInfo?: boolean;
@@ -49,6 +50,7 @@ export const CameraBarcodeScannerModal: React.FC<CameraBarcodeScannerModalProps>
   onClose,
   onScan,
   title = 'กล้องสแกนบาร์โค้ดสินค้า (Universal Barcode Scanner)',
+  autoClose = true,
   continuous = false,
   onOpenDiagnostics,
   showDebugInfo = false,
@@ -111,6 +113,7 @@ export const CameraBarcodeScannerModal: React.FC<CameraBarcodeScannerModalProps>
   const scanIntervalIdRef = useRef<number | null>(null);
   const zxingReaderRef = useRef<MultiFormatReader | null>(null);
   const isDecodingRef = useRef<boolean>(false);
+  const isScanLockedRef = useRef<boolean>(false);
   const lastScannedTimeRef = useRef<{ code: string; time: number }>({ code: '', time: 0 });
   const fpsCounterRef = useRef<{ count: number; lastTime: number }>({ count: 0, lastTime: Date.now() });
 
@@ -157,7 +160,7 @@ export const CameraBarcodeScannerModal: React.FC<CameraBarcodeScannerModalProps>
     }
   }, []);
 
-  // Stop camera tracks and cancel scan loops
+  // Stop camera tracks and cancel scan loops completely
   const stopCamera = useCallback(() => {
     if (scanIntervalIdRef.current) {
       clearInterval(scanIntervalIdRef.current);
@@ -166,9 +169,12 @@ export const CameraBarcodeScannerModal: React.FC<CameraBarcodeScannerModalProps>
 
     if (streamRef.current) {
       try {
-        streamRef.current.getTracks().forEach((track) => track.stop());
+        const tracks = streamRef.current.getTracks();
+        tracks.forEach((track) => {
+          track.stop();
+        });
       } catch (err) {
-        console.warn('Error stopping camera track:', err);
+        console.warn('Error stopping camera tracks:', err);
       }
       streamRef.current = null;
     }
@@ -197,9 +203,12 @@ export const CameraBarcodeScannerModal: React.FC<CameraBarcodeScannerModalProps>
     }
   }, []);
 
-  // Handle successful barcode recognition (strictly String format, preserving leading zeros)
+  // Handle successful barcode recognition with Atomic Lock and Immediate Auto Close
   const handleBarcodeFound = useCallback(
     (code: string, formatName: string = '') => {
+      // Atomic Lock Guard: Prevent any duplicate scan race condition
+      if (isScanLockedRef.current) return;
+
       const cleanCode = String(code).trim();
       if (!cleanCode) return;
 
@@ -211,27 +220,47 @@ export const CameraBarcodeScannerModal: React.FC<CameraBarcodeScannerModalProps>
         return;
       }
 
+      // ACTIVATE ATOMIC LOCK IMMEDIATELY
+      isScanLockedRef.current = true;
       lastScannedTimeRef.current = { code: cleanCode, time: now };
+
+      // 1. Immediately cancel scan interval loop
+      if (scanIntervalIdRef.current) {
+        clearInterval(scanIntervalIdRef.current);
+        scanIntervalIdRef.current = null;
+      }
+
+      // 2. Play scan success sound
       playScanSuccessSound();
 
+      // 3. Update feedback state
       setLastScanned(cleanCode);
       setLastScannedFormat(formatName || 'BARCODE');
       setScanCount((prev) => prev + 1);
 
-      // Call parent callback with real barcode string
+      // 4. Send clean barcode string to parent callback immediately
       onScan(cleanCode, formatName);
 
-      if (!continuous) {
+      // 5. If autoClose is active, stop camera and close modal immediately
+      if (autoClose && !continuous) {
+        stopCamera();
+        onClose();
+      } else if (!continuous) {
         stopCamera();
         onClose();
       }
     },
-    [continuous, onClose, onScan, stopCamera]
+    [autoClose, continuous, onClose, onScan, stopCamera]
   );
 
   // Core Resilient Multi-Pass Frame Decoding Loop
   const decodeVideoFrame = useCallback(async () => {
-    if (!videoRef.current || videoRef.current.readyState < 2 || isDecodingRef.current) {
+    if (
+      !videoRef.current ||
+      videoRef.current.readyState < 2 ||
+      isDecodingRef.current ||
+      isScanLockedRef.current
+    ) {
       return;
     }
 
@@ -569,6 +598,8 @@ export const CameraBarcodeScannerModal: React.FC<CameraBarcodeScannerModalProps>
   // Reset scan state on modal open & start camera
   useEffect(() => {
     if (isOpen) {
+      isScanLockedRef.current = false;
+      isDecodingRef.current = false;
       setLastScanned('');
       setLastScannedFormat('');
       setManualCode('');
@@ -577,6 +608,8 @@ export const CameraBarcodeScannerModal: React.FC<CameraBarcodeScannerModalProps>
         startCamera();
       }
     } else {
+      isScanLockedRef.current = false;
+      isDecodingRef.current = false;
       stopCamera();
     }
 
@@ -962,19 +995,28 @@ export const CameraBarcodeScannerModal: React.FC<CameraBarcodeScannerModalProps>
               </div>
 
               {/* 7. Duplicate / Save Status */}
-              <div className="bg-slate-900 p-2 rounded-lg border border-slate-800 sm:col-span-3">
+              <div className="bg-slate-900 p-2 rounded-lg border border-slate-800">
                 <span className="text-slate-500 block">7. Firebase Duplicate Check Status:</span>
                 {!lastScanned ? (
                   <span className="text-slate-400">Waiting for Barcode Detection</span>
                 ) : matchedExistingProduct ? (
-                  <span className="text-amber-400 font-bold">
-                    ⚠️ รหัสซ้ำกับสินค้าในระบบ: "{matchedExistingProduct.name}" (SKU: {matchedExistingProduct.sku})
+                  <span className="text-amber-400 font-bold truncate block">
+                    ⚠️ ซ้ำ: "{matchedExistingProduct.name}"
                   </span>
                 ) : (
                   <span className="text-emerald-400 font-bold">
-                    ✓ รหัสไม่ซ้ำในระบบ Firebase พร้อมบันทึกสินค้าใหม่ได้ทันที
+                    ✓ รหัสไม่ซ้ำในระบบ
                   </span>
                 )}
+              </div>
+
+              {/* 8. Auto Close Camera Status */}
+              <div className="bg-slate-900 p-2 rounded-lg border border-slate-800 sm:col-span-2">
+                <span className="text-slate-500 block">8. Auto Close & Stream Status:</span>
+                <span className="text-emerald-400 font-bold flex items-center gap-1.5">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Auto Close Active (หยุดอ่าน, ปิด Stream ทันที, ป้องกันดับเบิ้ลสแกน)</span>
+                </span>
               </div>
             </div>
           </div>
@@ -1005,9 +1047,14 @@ export const CameraBarcodeScannerModal: React.FC<CameraBarcodeScannerModalProps>
           {/* Footer info */}
           <div className="flex flex-wrap items-center justify-between text-[11px] text-slate-400 pt-1 gap-2">
             <div className="flex items-center gap-2">
+              <span className="flex items-center gap-1 text-emerald-400 font-semibold">
+                <Zap className="w-3.5 h-3.5" />
+                <span>Auto Close ทันทีเมื่ออ่านได้</span>
+              </span>
+              <span className="text-slate-600">•</span>
               <span className="flex items-center gap-1 text-slate-300">
                 <Volume2 className="w-3.5 h-3.5 text-blue-400" />
-                <span>เสียง Beep อัตโนมัติ</span>
+                <span>เสียง Beep</span>
               </span>
               <span className="text-slate-600">•</span>
               <span className="text-slate-400">รักษาเลข 0 ด้านหน้าแบบ String</span>
