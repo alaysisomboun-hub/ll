@@ -900,9 +900,9 @@ export const POSView: React.FC = () => {
                         <div className="flex items-start justify-between gap-2.5">
                           {/* Cart Item Thumbnail */}
                           <div className="w-11 h-11 rounded-xl bg-slate-100 overflow-hidden shrink-0 border border-slate-200 flex items-center justify-center relative">
-                            {item.product.imageUrl ? (
+                            {(item.product.imageUrl || item.product.images?.[0]) ? (
                               <img
-                                src={item.product.imageUrl}
+                                src={item.product.imageUrl || item.product.images?.[0]}
                                 alt={item.product.name}
                                 className="w-full h-full object-cover"
                                 onError={(e) => {
@@ -912,7 +912,7 @@ export const POSView: React.FC = () => {
                                 }}
                               />
                             ) : null}
-                            <div className={`cart-fallback ${item.product.imageUrl ? 'hidden' : ''} absolute inset-0 bg-slate-100 flex items-center justify-center`}>
+                            <div className={`cart-fallback ${(item.product.imageUrl || item.product.images?.[0]) ? 'hidden' : ''} absolute inset-0 bg-slate-100 flex items-center justify-center`}>
                               <Tag className="w-4 h-4 text-slate-400" />
                             </div>
                           </div>
@@ -1146,10 +1146,10 @@ export const POSView: React.FC = () => {
                         }`}
                       >
                         <div className="w-full h-20 rounded-xl bg-slate-50 border border-slate-100 overflow-hidden relative mb-2 flex items-center justify-center">
-                          {product.imageUrl ? (
+                          {(product.imageUrl || product.images?.[0]) ? (
                             <>
                               <img
-                                src={product.imageUrl}
+                                src={product.imageUrl || product.images?.[0]}
                                 alt={product.name}
                                 className="w-full h-full object-cover"
                                 loading="lazy"
@@ -1465,10 +1465,10 @@ export const POSView: React.FC = () => {
                       >
                         {/* Image / Thumbnail */}
                         <div className="w-full h-24 rounded-xl bg-slate-50 border border-slate-100 overflow-hidden relative mb-2.5 flex items-center justify-center">
-                          {product.imageUrl ? (
+                          {(product.imageUrl || product.images?.[0]) ? (
                             <>
                               <img
-                                src={product.imageUrl}
+                                src={product.imageUrl || product.images?.[0]}
                                 alt={product.name}
                                 className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
                                 loading="lazy"

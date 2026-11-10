@@ -20,7 +20,15 @@ const app = initializeApp(firebaseConfig);
 
 // CRITICAL: The app will break without firebaseConfig.firestoreDatabaseId
 export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
-export const storage = getStorage(app);
+
+// Initialize Storage with explicit storageBucket from config
+const configuredBucket = firebaseConfig.storageBucket
+  ? (firebaseConfig.storageBucket.startsWith('gs://') ? firebaseConfig.storageBucket : `gs://${firebaseConfig.storageBucket}`)
+  : undefined;
+
+export const storage = getStorage(app, configuredBucket);
+export const storageBucketName = firebaseConfig.storageBucket || '';
+export { firebaseConfig };
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
 

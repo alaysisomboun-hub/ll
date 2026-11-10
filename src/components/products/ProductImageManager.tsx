@@ -15,8 +15,20 @@ import {
   RotateCcw,
   Ban,
   Check,
-  Server
+  Cloud,
+  Server,
+  ExternalLink,
+  ShieldAlert,
+  Info
 } from 'lucide-react';
+import {
+  ref,
+  uploadBytesResumable,
+  getDownloadURL,
+  UploadTask,
+  StorageError,
+} from 'firebase/storage';
+import { storage, storageBucketName, firebaseConfig } from '../../firebase';
 
 interface ProductImageManagerProps {
   mainImageUrl: string;
@@ -37,6 +49,11 @@ export const ProductImageManager: React.FC<ProductImageManagerProps> = ({
 }) => {
   const [activeTab, setActiveTab] = useState<'upload' | 'url'>('upload');
 
+  // Storage Engine: 'firebase' (Primary SDK) or 'local' (POS Local Server Fallback)
+  const [storageEngine, setStorageEngine] = useState<'firebase' | 'local'>('firebase');
+  const [isBucketNotFound, setIsBucketNotFound] = useState<boolean>(false);
+  const [showConsoleHelp, setShowConsoleHelp] = useState<boolean>(false);
+
   // URL state
   const [urlInput, setUrlInput] = useState<string>('');
   const [isVerifyingUrl, setIsVerifyingUrl] = useState<boolean>(false);
@@ -48,6 +65,9 @@ export const ProductImageManager: React.FC<ProductImageManagerProps> = ({
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [instantPreviewUrl, setInstantPreviewUrl] = useState<string | null>(null);
+  const instantPreviewUrlRef = useRef<string | null>(null);
+  instantPreviewUrlRef.current = instantPreviewUrl;
+
   const [isUploading, setIsUploading] = useState<boolean>(false);
   const [uploadProgress, setUploadProgress] = useState<number>(0);
   const [bytesTransferred, setBytesTransferred] = useState<number>(0);
@@ -56,24 +76,25 @@ export const ProductImageManager: React.FC<ProductImageManagerProps> = ({
   const [uploadErrorMessage, setUploadErrorMessage] = useState<string>('');
   const [isDragOver, setIsDragOver] = useState<boolean>(false);
 
-  // User cancel ref
+  // User cancel ref & active upload task refs
   const userDidCancelRef = useRef<boolean>(false);
   const cancelUploadRef = useRef<(() => void) | null>(null);
+  const activeUploadTaskRef = useRef<UploadTask | null>(null);
 
   // Preview modal
   const [previewModalUrl, setPreviewModalUrl] = useState<string | null>(null);
 
-  // Cleanup object URLs on unmount
+  // Cleanup object URLs and active uploads ONLY when component unmounts
   useEffect(() => {
     return () => {
-      if (instantPreviewUrl && instantPreviewUrl.startsWith('blob:')) {
-        URL.revokeObjectURL(instantPreviewUrl);
+      if (instantPreviewUrlRef.current && instantPreviewUrlRef.current.startsWith('blob:')) {
+        URL.revokeObjectURL(instantPreviewUrlRef.current);
       }
       if (cancelUploadRef.current) {
         cancelUploadRef.current();
       }
     };
-  }, [instantPreviewUrl]);
+  }, []);
 
   // Normalize image list (unique, non-empty, main image always included)
   const allImages = React.useMemo(() => {
@@ -197,8 +218,98 @@ export const ProductImageManager: React.FC<ProductImageManagerProps> = ({
     setVerifiedUrlPreview('');
   };
 
-  // Upload file via Backend API (/api/upload) with XMLHttpRequest progress
-  const uploadViaServer = useCallback((file: File): Promise<string> => {
+  // ENGINE 1: Firebase Storage SDK (uploadBytesResumable + getDownloadURL)
+  const uploadViaFirebaseStorage = useCallback((file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      try {
+        const fileExt = file.name.substring(file.name.lastIndexOf('.')) || '.jpg';
+        const safeBase = file.name.replace(/[^a-zA-Z0-9_-]/g, '_');
+        const storagePath = `products/${Date.now()}_${safeBase}${fileExt}`;
+        const storageRef = ref(storage, storagePath);
+
+        const metadata = {
+          contentType: file.type || 'image/jpeg',
+          customMetadata: {
+            originalName: file.name,
+            uploadedAt: new Date().toISOString(),
+          },
+        };
+
+        const uploadTask = uploadBytesResumable(storageRef, file, metadata);
+        activeUploadTaskRef.current = uploadTask;
+
+        cancelUploadRef.current = () => {
+          userDidCancelRef.current = true;
+          uploadTask.cancel();
+        };
+
+        uploadTask.on(
+          'state_changed',
+          (snapshot) => {
+            // STRICT TRUE PROGRESS: NO ARTIFICIAL Math.max(pct, 10)!
+            if (snapshot.totalBytes > 0) {
+              const pct = Math.floor((snapshot.bytesTransferred / snapshot.totalBytes) * 100);
+              setUploadProgress(pct);
+              setBytesTransferred(snapshot.bytesTransferred);
+              setTotalBytes(snapshot.totalBytes);
+            }
+          },
+          (error: StorageError) => {
+            activeUploadTaskRef.current = null;
+            cancelUploadRef.current = null;
+
+            if (userDidCancelRef.current || error.code === 'storage/canceled') {
+              reject(new Error('USER_CANCELLED'));
+              return;
+            }
+
+            console.error('[Firebase Storage Error]', {
+              code: error.code,
+              message: error.message,
+              bucket: storageBucketName,
+            });
+
+            const is404 =
+              error.code === 'storage/bucket-not-found' ||
+              error.message.includes('404') ||
+              error.message.includes('bucket does not exist') ||
+              error.code === 'storage/retry-limit-exceeded';
+
+            if (is404) {
+              setIsBucketNotFound(true);
+              reject(
+                new Error(
+                  `FIREBASE_404: คลาวด์สตอเรจบัคเก็ต "${storageBucketName}" ยังไม่ได้ถูกเปิดใช้งานใน Firebase Console (HTTP 404: The specified bucket does not exist)`
+                )
+              );
+            } else if (error.code === 'storage/unauthorized') {
+              reject(new Error('สิทธิ์การเข้าถึงไม่เพียงพอ (Permission Denied): ตรวจสอบ Storage Security Rules'));
+            } else if (error.code === 'storage/quota-exceeded') {
+              reject(new Error('โควตา Firebase Storage เต็ม (Quota Exceeded)'));
+            } else {
+              reject(new Error(`Firebase Storage Error: ${error.message} (${error.code})`));
+            }
+          },
+          async () => {
+            activeUploadTaskRef.current = null;
+            cancelUploadRef.current = null;
+            try {
+              const downloadUrl = await getDownloadURL(uploadTask.snapshot.ref);
+              setUploadProgress(100);
+              resolve(downloadUrl);
+            } catch (err: any) {
+              reject(new Error(`ไม่สามารถดึง Download URL จาก Firebase ได้: ${err?.message || err}`));
+            }
+          }
+        );
+      } catch (err: any) {
+        reject(err);
+      }
+    });
+  }, []);
+
+  // ENGINE 2: Local Server Storage (/api/upload -> public/uploads/)
+  const uploadViaLocalServer = useCallback((file: File): Promise<string> => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
 
@@ -212,13 +323,13 @@ export const ProductImageManager: React.FC<ProductImageManagerProps> = ({
         const uploadEndpoint = `${window.location.origin}/api/upload`;
 
         cancelUploadRef.current = () => {
+          userDidCancelRef.current = true;
           xhr.abort();
-          reject(new Error('USER_CANCELLED'));
         };
 
         xhr.upload.onprogress = (event) => {
           if (event.lengthComputable && event.total > 0) {
-            const pct = Math.round((event.loaded / event.total) * 100);
+            const pct = Math.floor((event.loaded / event.total) * 100);
             setUploadProgress(pct);
             setBytesTransferred(event.loaded);
             setTotalBytes(event.total);
@@ -240,35 +351,25 @@ export const ProductImageManager: React.FC<ProductImageManagerProps> = ({
               reject(new Error('ข้อมูลตอบกลับจากเซิร์ฟเวอร์ไม่ถูกต้อง'));
             }
           } else {
-            console.error('[Upload Error]', {
-              status: xhr.status,
-              statusText: xhr.statusText,
-              responseURL: xhr.responseURL || uploadEndpoint,
-              response: xhr.responseText,
-            });
-
             let msg = `การอัปโหลดขัดข้อง (HTTP ${xhr.status})`;
             if (xhr.status === 404) {
-              msg = 'เซิร์ฟเวอร์ขัดข้อง (HTTP 404): ไม่พบ API สำหรับอัปโหลด กรุณาลองใหม่อีกครั้ง';
+              msg = 'เซิร์ฟเวอร์ขัดข้อง (HTTP 404): ไม่พบ API สำหรับอัปโหลด';
             } else if (xhr.status === 413) {
-              msg = 'ขนาดไฟล์เกินกำหนด (HTTP 413): ไฟล์ต้องไม่เกิน 5 MB';
+              msg = 'ขนาดไฟล์เกินกำหนด 5 MB (HTTP 413)';
             } else if (xhr.status === 415) {
-              msg = 'ชนิดไฟล์ไม่ถูกต้อง (HTTP 415): รองรับเฉพาะ JPG, PNG, WebP, GIF';
+              msg = 'ชนิดไฟล์ไม่ถูกต้อง (HTTP 415): รองรับ JPG, PNG, WebP, GIF';
             }
-
             try {
               const errObj = JSON.parse(xhr.responseText);
               if (errObj.error) msg = errObj.error;
             } catch {}
-
             reject(new Error(msg));
           }
         };
 
         xhr.onerror = () => {
           cancelUploadRef.current = null;
-          console.error('[Upload Network Error] Could not connect to:', uploadEndpoint);
-          reject(new Error('เกิดข้อผิดพลาดในการเชื่อมต่อเน็ตเวิร์ก (Network Error)'));
+          reject(new Error('ไม่สามารถเชื่อมต่อเน็ตเวิร์กกับเซิร์ฟเวอร์ได้'));
         };
 
         xhr.ontimeout = () => {
@@ -278,8 +379,7 @@ export const ProductImageManager: React.FC<ProductImageManagerProps> = ({
 
         xhr.open('POST', uploadEndpoint, true);
         xhr.setRequestHeader('Content-Type', 'application/json');
-        xhr.timeout = 45000; // 45 seconds
-
+        xhr.timeout = 45000;
         xhr.send(
           JSON.stringify({
             filename: file.name,
@@ -294,7 +394,7 @@ export const ProductImageManager: React.FC<ProductImageManagerProps> = ({
   }, []);
 
   // Execute upload process with genuine progress and error handling
-  const executeUpload = async (file: File) => {
+  const executeUpload = async (file: File, forcedEngine?: 'firebase' | 'local') => {
     userDidCancelRef.current = false;
     setIsUploading(true);
     setUploadStatus('uploading');
@@ -303,8 +403,16 @@ export const ProductImageManager: React.FC<ProductImageManagerProps> = ({
     setTotalBytes(file.size);
     setUploadErrorMessage('');
 
+    const targetEngine = forcedEngine || storageEngine;
+
     try {
-      const finalDownloadUrl = await uploadViaServer(file);
+      let finalDownloadUrl = '';
+
+      if (targetEngine === 'firebase') {
+        finalDownloadUrl = await uploadViaFirebaseStorage(file);
+      } else {
+        finalDownloadUrl = await uploadViaLocalServer(file);
+      }
 
       setIsUploading(false);
       setUploadStatus('success');
@@ -328,8 +436,8 @@ export const ProductImageManager: React.FC<ProductImageManagerProps> = ({
       // Clean up local instant preview after successful sync
       setTimeout(() => {
         setSelectedFile(null);
-        if (instantPreviewUrl && instantPreviewUrl.startsWith('blob:')) {
-          URL.revokeObjectURL(instantPreviewUrl);
+        if (instantPreviewUrlRef.current && instantPreviewUrlRef.current.startsWith('blob:')) {
+          URL.revokeObjectURL(instantPreviewUrlRef.current);
         }
         setInstantPreviewUrl(null);
         setUploadStatus('idle');
@@ -343,18 +451,17 @@ export const ProductImageManager: React.FC<ProductImageManagerProps> = ({
         return;
       }
 
-      console.error('Upload failed:', err);
+      console.error('Upload execution failed:', err);
       setIsUploading(false);
       setUploadStatus('error');
-      setUploadErrorMessage(
-        `การอัปโหลดไม่สำเร็จ: ${err?.message || 'เกิดข้อผิดพลาดในการเชื่อมต่อเซิร์ฟเวอร์'}`
-      );
+      setUploadErrorMessage(err?.message || 'เกิดข้อผิดพลาดในการอัปโหลดรูปภาพ');
     }
   };
 
   // Handle file selection from gallery, folder, or camera
   const handleFileSelected = (file: File) => {
     setUploadErrorMessage('');
+    setIsBucketNotFound(false);
 
     // Check MIME type
     if (!ALLOWED_MIME_TYPES.includes(file.type.toLowerCase())) {
@@ -377,8 +484,8 @@ export const ProductImageManager: React.FC<ProductImageManagerProps> = ({
     }
 
     // Revoke previous blob URL if exists
-    if (instantPreviewUrl && instantPreviewUrl.startsWith('blob:')) {
-      URL.revokeObjectURL(instantPreviewUrl);
+    if (instantPreviewUrlRef.current && instantPreviewUrlRef.current.startsWith('blob:')) {
+      URL.revokeObjectURL(instantPreviewUrlRef.current);
     }
 
     // STEP 1: Show Instant Preview immediately
@@ -407,10 +514,19 @@ export const ProductImageManager: React.FC<ProductImageManagerProps> = ({
   };
 
   // Handle Retry Upload
-  const handleRetryUpload = () => {
+  const handleRetryUpload = (forcedEngine?: 'firebase' | 'local') => {
     if (selectedFile) {
       userDidCancelRef.current = false;
-      executeUpload(selectedFile);
+      executeUpload(selectedFile, forcedEngine);
+    }
+  };
+
+  // Switch to Local Storage Fallback and execute immediately
+  const handleSwitchToLocalAndUpload = () => {
+    setStorageEngine('local');
+    setIsBucketNotFound(false);
+    if (selectedFile) {
+      executeUpload(selectedFile, 'local');
     }
   };
 
@@ -418,12 +534,13 @@ export const ProductImageManager: React.FC<ProductImageManagerProps> = ({
   const handleClearSelected = () => {
     handleCancelUpload();
     setSelectedFile(null);
-    if (instantPreviewUrl && instantPreviewUrl.startsWith('blob:')) {
-      URL.revokeObjectURL(instantPreviewUrl);
+    if (instantPreviewUrlRef.current && instantPreviewUrlRef.current.startsWith('blob:')) {
+      URL.revokeObjectURL(instantPreviewUrlRef.current);
     }
     setInstantPreviewUrl(null);
     setUploadStatus('idle');
     setUploadErrorMessage('');
+    setIsBucketNotFound(false);
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -506,6 +623,37 @@ export const ProductImageManager: React.FC<ProductImageManagerProps> = ({
       {/* Mode A: Device File Upload */}
       {activeTab === 'upload' && (
         <div className="space-y-3">
+          {/* Storage Engine Status & Selector */}
+          <div className="p-2.5 bg-blue-50/60 border border-blue-200 rounded-xl flex flex-wrap items-center justify-between gap-2 text-xs">
+            <div className="flex items-center gap-1.5">
+              <span className="font-semibold text-slate-700">ระบบจัดเก็บ:</span>
+              <span className="inline-flex items-center gap-1 font-bold text-blue-700 bg-white px-2 py-0.5 rounded-md border border-blue-200">
+                {storageEngine === 'firebase' ? (
+                  <>
+                    <Cloud className="w-3.5 h-3.5 text-blue-600" />
+                    <span>Firebase Storage SDK</span>
+                  </>
+                ) : (
+                  <>
+                    <Server className="w-3.5 h-3.5 text-indigo-600" />
+                    <span>POS Local Server (สำรอง)</span>
+                  </>
+                )}
+              </span>
+            </div>
+
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => setStorageEngine(storageEngine === 'firebase' ? 'local' : 'firebase')}
+                className="text-[11px] font-semibold text-blue-600 hover:text-blue-800 underline flex items-center gap-1 cursor-pointer"
+              >
+                <RefreshCw className="w-3 h-3" />
+                <span>สลับเป็น {storageEngine === 'firebase' ? 'Local Server' : 'Firebase Storage'}</span>
+              </button>
+            </div>
+          </div>
+
           <input
             ref={fileInputRef}
             type="file"
@@ -546,7 +694,7 @@ export const ProductImageManager: React.FC<ProductImageManagerProps> = ({
               <button
                 type="button"
                 disabled={allImages.length >= maxImages}
-                className="mt-1 px-4 py-2 text-xs font-semibold bg-blue-600 hover:bg-blue-700 active:scale-95 text-white rounded-xl transition shadow-xs flex items-center gap-1.5 disabled:opacity-50"
+                className="mt-1 px-4 py-2 text-xs font-semibold bg-blue-600 hover:bg-blue-700 active:scale-95 text-white rounded-xl transition shadow-xs flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
               >
                 <Plus className="w-3.5 h-3.5" />
                 <span>เลือกไฟล์จากอุปกรณ์</span>
@@ -593,13 +741,13 @@ export const ProductImageManager: React.FC<ProductImageManagerProps> = ({
                     {uploadStatus === 'uploading' && (
                       <span className="text-[11px] font-semibold text-blue-600 flex items-center gap-1">
                         <Loader2 className="w-3 h-3 animate-spin" />
-                        กำลังอัปโหลดรูปภาพ... ({uploadProgress}%)
+                        กำลังอัปโหลดไปยัง {storageEngine === 'firebase' ? 'Firebase Storage' : 'Local Server'}... ({uploadProgress}%)
                       </span>
                     )}
                     {uploadStatus === 'success' && (
                       <span className="text-[11px] font-semibold text-emerald-600 flex items-center gap-1">
                         <CheckCircle2 className="w-3.5 h-3.5" />
-                        อัปโหลดสำเร็จ บันทึกเข้าคลังภาพแล้ว
+                        อัปโหลดสำเร็จ บันทึกเข้าคลังภาพและเตรียมลง Firestore แล้ว
                       </span>
                     )}
                     {uploadStatus === 'error' && (
@@ -621,7 +769,7 @@ export const ProductImageManager: React.FC<ProductImageManagerProps> = ({
                     )}
                   </div>
 
-                  {/* Byte counter */}
+                  {/* Byte counter - Genuine progress */}
                   {isUploading && (
                     <p className="text-[10px] text-slate-500 font-mono mt-0.5">
                       {formatBytes(bytesTransferred)} / {formatBytes(totalBytes)} ({uploadProgress}%)
@@ -634,7 +782,7 @@ export const ProductImageManager: React.FC<ProductImageManagerProps> = ({
                   <button
                     type="button"
                     onClick={handleClearSelected}
-                    className="p-1 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition"
+                    className="p-1 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition cursor-pointer"
                     title="ล้างรายการนี้"
                   >
                     <X className="w-4 h-4" />
@@ -648,7 +796,7 @@ export const ProductImageManager: React.FC<ProductImageManagerProps> = ({
                   <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden border border-slate-200">
                     <div
                       className="bg-blue-600 h-full transition-all duration-150"
-                      style={{ width: `${Math.max(uploadProgress, 5)}%` }}
+                      style={{ width: `${Math.max(uploadProgress, 2)}%` }}
                     />
                   </div>
                   <div className="flex items-center justify-between text-[10px] text-slate-400 font-mono">
@@ -659,8 +807,8 @@ export const ProductImageManager: React.FC<ProductImageManagerProps> = ({
                 </div>
               )}
 
-              {/* Action buttons (Cancel / Retry / Change) */}
-              <div className="flex items-center justify-end gap-2 pt-1 border-t border-slate-100">
+              {/* Action buttons (Cancel / Retry / Fallback / Change) */}
+              <div className="flex flex-wrap items-center justify-end gap-2 pt-1 border-t border-slate-100">
                 {isUploading ? (
                   <button
                     type="button"
@@ -679,10 +827,23 @@ export const ProductImageManager: React.FC<ProductImageManagerProps> = ({
                     >
                       เปลี่ยนรูปใหม่
                     </button>
+
+                    {/* Quick switch to Local Server if Firebase failed with 404 */}
+                    {isBucketNotFound && (
+                      <button
+                        type="button"
+                        onClick={handleSwitchToLocalAndUpload}
+                        className="px-3 py-1.5 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg transition shadow-xs flex items-center gap-1 cursor-pointer"
+                      >
+                        <Server className="w-3.5 h-3.5" />
+                        <span>บันทึกผ่าน Local Server ทันที</span>
+                      </button>
+                    )}
+
                     {(uploadStatus === 'error' || uploadStatus === 'cancelled') && (
                       <button
                         type="button"
-                        onClick={handleRetryUpload}
+                        onClick={() => handleRetryUpload()}
                         className="px-3.5 py-1.5 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition shadow-xs flex items-center gap-1 cursor-pointer"
                       >
                         <RotateCcw className="w-3.5 h-3.5" />
@@ -697,21 +858,76 @@ export const ProductImageManager: React.FC<ProductImageManagerProps> = ({
 
           {/* Upload Error Banner */}
           {uploadErrorMessage && uploadStatus === 'error' && (
-            <div className="p-3 bg-red-50 border border-red-200 rounded-xl flex items-start gap-2.5 text-xs text-red-700">
-              <AlertCircle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
-              <div className="flex-1">
-                <p className="font-semibold">{uploadErrorMessage}</p>
-                <p className="text-[11px] text-red-500 mt-1">
-                  สามารถกดปุ่ม "ลองใหม่อีกครั้ง" หรือสลับไปใช้แท็บ "ใส่ลิงก์ URL รูปภาพ" ได้ทันที
-                </p>
+            <div className="p-3 bg-red-50 border border-red-200 rounded-xl space-y-2 text-xs text-red-800">
+              <div className="flex items-start gap-2.5">
+                <AlertCircle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
+                <div className="flex-1">
+                  <p className="font-bold text-red-900">{uploadErrorMessage}</p>
+
+                  {isBucketNotFound ? (
+                    <div className="mt-2 text-[11px] text-red-700 space-y-1.5 bg-white/70 p-2.5 rounded-lg border border-red-200">
+                      <p className="font-semibold text-slate-800 flex items-center gap-1">
+                        <Info className="w-3.5 h-3.5 text-blue-600" />
+                        <span>สาเหตุและการแก้ปัญหา:</span>
+                      </p>
+                      <p>
+                        1. โครงการ Firebase <strong>{firebaseConfig.projectId}</strong> ยังไม่ได้กดเปิดใช้งาน <strong>Cloud Storage</strong> ใน Firebase Console
+                      </p>
+                      <p>
+                        2. สามารถกดปุ่ม <strong>"บันทึกผ่าน Local Server ทันที"</strong> ด้านบน เพื่ออัปโหลดและใช้งานรูปภาพใน POS ได้ทันที
+                      </p>
+                      <p>
+                        3. หรือเปิดใช้งาน Storage Bucket ใน Firebase Console โดยไปที่ <strong>Build &gt; Storage &gt; Get Started</strong>
+                      </p>
+                    </div>
+                  ) : (
+                    <p className="text-[11px] text-red-600 mt-1">
+                      สามารถกดปุ่ม "ลองใหม่อีกครั้ง" หรือสลับไปใช้แท็บ "ใส่ลิงก์ URL รูปภาพ" ได้ทันที
+                    </p>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setUploadErrorMessage('')}
+                  className="text-red-400 hover:text-red-700 p-0.5 cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
               </div>
-              <button
-                type="button"
-                onClick={() => setUploadErrorMessage('')}
-                className="text-red-400 hover:text-red-700 p-0.5 cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
+
+              {isBucketNotFound && (
+                <div className="flex items-center justify-between pt-1 border-t border-red-100">
+                  <button
+                    type="button"
+                    onClick={() => setShowConsoleHelp(!showConsoleHelp)}
+                    className="text-[11px] text-blue-600 hover:underline flex items-center gap-1 cursor-pointer"
+                  >
+                    <span>{showConsoleHelp ? 'ซ่อนคำแนะนำ Firebase Console' : 'ดูขั้นตอนเปิดใช้งาน Firebase Console'}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleSwitchToLocalAndUpload}
+                    className="text-xs font-bold text-emerald-700 bg-emerald-100 hover:bg-emerald-200 px-3 py-1 rounded-lg transition flex items-center gap-1 cursor-pointer"
+                  >
+                    <Server className="w-3 h-3" />
+                    <span>ใช้ Local Storage สำรอง</span>
+                  </button>
+                </div>
+              )}
+
+              {showConsoleHelp && (
+                <div className="p-3 bg-white rounded-lg border border-slate-200 text-[11px] text-slate-700 space-y-1 mt-2">
+                  <p className="font-bold text-slate-900">ขั้นตอนการเปิดใช้งาน Firebase Storage ใน Firebase Console:</p>
+                  <ol className="list-decimal list-inside space-y-1 text-slate-600">
+                    <li>เข้าสู่ <a href="https://console.firebase.google.com" target="_blank" rel="noreferrer" className="text-blue-600 underline font-semibold">Firebase Console</a></li>
+                    <li>เลือกโปรเจกต์ <code>{firebaseConfig.projectId}</code></li>
+                    <li>เมนูด้านซ้าย เลือก <strong>Build &gt; Storage</strong></li>
+                    <li>คลิกปุ่ม <strong>Get Started</strong> และเลือกตำแหน่ง Bucket</li>
+                    <li>กฎความปลอดภัยจะถูกกำหนดไว้ในไฟล์ <code>storage.rules</code> ของโปรเจกต์นี้เรียบร้อยแล้ว</li>
+                  </ol>
+                </div>
+              )}
             </div>
           )}
         </div>
