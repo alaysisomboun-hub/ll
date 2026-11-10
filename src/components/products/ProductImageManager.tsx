@@ -14,11 +14,9 @@ import {
   X,
   RotateCcw,
   Ban,
-  FileImage,
+  Check,
   Server
 } from 'lucide-react';
-import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
-import { storage } from '../../firebase';
 
 interface ProductImageManagerProps {
   mainImageUrl: string;
@@ -56,14 +54,13 @@ export const ProductImageManager: React.FC<ProductImageManagerProps> = ({
   const [totalBytes, setTotalBytes] = useState<number>(0);
   const [uploadStatus, setUploadStatus] = useState<'idle' | 'preparing' | 'uploading' | 'success' | 'error' | 'cancelled'>('idle');
   const [uploadErrorMessage, setUploadErrorMessage] = useState<string>('');
-  const [activeEngine, setActiveEngine] = useState<'firebase' | 'server'>('firebase');
   const [isDragOver, setIsDragOver] = useState<boolean>(false);
 
-  // Active upload canceller
+  // User cancel ref
+  const userDidCancelRef = useRef<boolean>(false);
   const cancelUploadRef = useRef<(() => void) | null>(null);
-  const timeoutTimerRef = useRef<any>(null);
 
-  // Large preview modal
+  // Preview modal
   const [previewModalUrl, setPreviewModalUrl] = useState<string | null>(null);
 
   // Cleanup object URLs on unmount
@@ -71,9 +68,6 @@ export const ProductImageManager: React.FC<ProductImageManagerProps> = ({
     return () => {
       if (instantPreviewUrl && instantPreviewUrl.startsWith('blob:')) {
         URL.revokeObjectURL(instantPreviewUrl);
-      }
-      if (timeoutTimerRef.current) {
-        clearTimeout(timeoutTimerRef.current);
       }
       if (cancelUploadRef.current) {
         cancelUploadRef.current();
@@ -203,7 +197,7 @@ export const ProductImageManager: React.FC<ProductImageManagerProps> = ({
     setVerifiedUrlPreview('');
   };
 
-  // Upload file via App Server endpoint (/api/upload) with genuine XMLHttpRequest progress
+  // Upload file via Backend API (/api/upload) with XMLHttpRequest progress
   const uploadViaServer = useCallback((file: File): Promise<string> => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -239,13 +233,13 @@ export const ProductImageManager: React.FC<ProductImageManagerProps> = ({
                 setUploadProgress(100);
                 resolve(res.url);
               } else {
-                reject(new Error('เซิร์ฟเวอร์ไม่ส่ง URL รูปภาพกลับมา'));
+                reject(new Error('เซิร์ฟเวอร์ไม่ได้ส่ง URL รูปภาพกลับมา'));
               }
-            } catch (parseErr) {
-              reject(new Error('เซิร์ฟเวอร์ส่งข้อมูลตอบกลับไม่ถูกต้อง'));
+            } catch {
+              reject(new Error('ข้อมูลตอบกลับจากเซิร์ฟเวอร์ไม่ถูกต้อง'));
             }
           } else {
-            let msg = `เซิร์ฟเวอร์ขัดข้อง (HTTP ${xhr.status})`;
+            let msg = `การอัปโหลดขัดข้อง (HTTP ${xhr.status})`;
             try {
               const errObj = JSON.parse(xhr.responseText);
               if (errObj.error) msg = errObj.error;
@@ -266,7 +260,7 @@ export const ProductImageManager: React.FC<ProductImageManagerProps> = ({
 
         xhr.open('POST', '/api/upload', true);
         xhr.setRequestHeader('Content-Type', 'application/json');
-        xhr.timeout = 30000; // 30s timeout
+        xhr.timeout = 30000; // 30 seconds
 
         xhr.send(
           JSON.stringify({
@@ -281,75 +275,9 @@ export const ProductImageManager: React.FC<ProductImageManagerProps> = ({
     });
   }, []);
 
-  // Upload file via Firebase Storage resumable upload
-  const uploadViaFirebase = useCallback((file: File): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      try {
-        const safeName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
-        const filename = `products/${Date.now()}_${safeName}`;
-        const storageRef = ref(storage, filename);
-
-        const uploadTask = uploadBytesResumable(storageRef, file, {
-          contentType: file.type,
-        });
-
-        // Set cancel hook
-        cancelUploadRef.current = () => {
-          try {
-            uploadTask.cancel();
-          } catch {}
-          reject(new Error('USER_CANCELLED'));
-        };
-
-        // Strict connection timeout: if Firebase Storage is 404 or hangs, fail fast to fallback
-        const connectionTimeout = setTimeout(() => {
-          if (uploadTask.snapshot.bytesTransferred === 0) {
-            try {
-              uploadTask.cancel();
-            } catch {}
-            reject(new Error('FIREBASE_STORAGE_UNAVAILABLE'));
-          }
-        }, 6000);
-
-        uploadTask.on(
-          'state_changed',
-          (snapshot) => {
-            if (snapshot.bytesTransferred > 0) {
-              clearTimeout(connectionTimeout);
-            }
-            const transferred = snapshot.bytesTransferred;
-            const total = snapshot.totalBytes;
-            setBytesTransferred(transferred);
-            setTotalBytes(total);
-
-            // Genuine progress calculation: strictly from bytesTransferred / totalBytes
-            const progress = total > 0 ? Math.round((transferred / total) * 100) : 0;
-            setUploadProgress(progress);
-          },
-          (error) => {
-            clearTimeout(connectionTimeout);
-            cancelUploadRef.current = null;
-            reject(error);
-          },
-          async () => {
-            clearTimeout(connectionTimeout);
-            cancelUploadRef.current = null;
-            try {
-              const downloadUrl = await getDownloadURL(uploadTask.snapshot.ref);
-              resolve(downloadUrl);
-            } catch (err) {
-              reject(err);
-            }
-          }
-        );
-      } catch (err) {
-        reject(err);
-      }
-    });
-  }, []);
-
-  // Execute full upload process with automatic fallback and genuine error reporting
+  // Execute upload process with genuine progress and error handling
   const executeUpload = async (file: File) => {
+    userDidCancelRef.current = false;
     setIsUploading(true);
     setUploadStatus('uploading');
     setUploadProgress(0);
@@ -357,52 +285,9 @@ export const ProductImageManager: React.FC<ProductImageManagerProps> = ({
     setTotalBytes(file.size);
     setUploadErrorMessage('');
 
-    let finalDownloadUrl: string | null = null;
-
-    // Phase 1: Try Firebase Storage resumable upload
     try {
-      setActiveEngine('firebase');
-      finalDownloadUrl = await uploadViaFirebase(file);
-    } catch (fbErr: any) {
-      // Check if user manually cancelled
-      if (fbErr?.message === 'USER_CANCELLED' || fbErr?.code === 'storage/canceled') {
-        setIsUploading(false);
-        setUploadStatus('cancelled');
-        setUploadProgress(0);
-        setUploadErrorMessage('ยกเลิกการอัปโหลดเรียบร้อยแล้ว');
-        return;
-      }
+      const finalDownloadUrl = await uploadViaServer(file);
 
-      console.warn('Firebase Storage upload failed or not provisioned, switching to App Server Storage:', fbErr);
-
-      // Phase 2: Automatic fallback to App Server Storage (/api/upload)
-      try {
-        setActiveEngine('server');
-        setUploadErrorMessage(
-          'Firebase Storage ไม่พร้อมใช้งาน กำลังสลับไปอัปโหลดผ่าน App Server Storage อัตโนมัติ...'
-        );
-        finalDownloadUrl = await uploadViaServer(file);
-      } catch (serverErr: any) {
-        if (serverErr?.message === 'USER_CANCELLED') {
-          setIsUploading(false);
-          setUploadStatus('cancelled');
-          setUploadProgress(0);
-          setUploadErrorMessage('ยกเลิกการอัปโหลดเรียบร้อยแล้ว');
-          return;
-        }
-
-        console.error('All upload engines failed:', serverErr);
-        setIsUploading(false);
-        setUploadStatus('error');
-        setUploadErrorMessage(
-          `อัปโหลดไม่สำเร็จ: ${serverErr?.message || fbErr?.message || 'ไม่สามารถส่งรูปภาพได้ กรุณาตรวจสอบการเชื่อมต่ออินเทอร์เน็ต'}`
-        );
-        return;
-      }
-    }
-
-    // Phase 3: Successful upload completion
-    if (finalDownloadUrl) {
       setIsUploading(false);
       setUploadStatus('success');
       setUploadProgress(100);
@@ -430,11 +315,26 @@ export const ProductImageManager: React.FC<ProductImageManagerProps> = ({
         }
         setInstantPreviewUrl(null);
         setUploadStatus('idle');
-      }, 1500);
+      }, 1200);
+    } catch (err: any) {
+      if (userDidCancelRef.current || err?.message === 'USER_CANCELLED') {
+        setIsUploading(false);
+        setUploadStatus('cancelled');
+        setUploadProgress(0);
+        setUploadErrorMessage('ยกเลิกการอัปโหลดเรียบร้อยแล้ว');
+        return;
+      }
+
+      console.error('Upload failed:', err);
+      setIsUploading(false);
+      setUploadStatus('error');
+      setUploadErrorMessage(
+        `การอัปโหลดไม่สำเร็จ: ${err?.message || 'เกิดข้อผิดพลาดในการเชื่อมต่อเซิร์ฟเวอร์'}`
+      );
     }
   };
 
-  // Handle file selection from gallery or camera
+  // Handle file selection from gallery, folder, or camera
   const handleFileSelected = (file: File) => {
     setUploadErrorMessage('');
 
@@ -478,6 +378,7 @@ export const ProductImageManager: React.FC<ProductImageManagerProps> = ({
 
   // Handle Cancel Upload
   const handleCancelUpload = () => {
+    userDidCancelRef.current = true;
     if (cancelUploadRef.current) {
       cancelUploadRef.current();
     }
@@ -490,6 +391,7 @@ export const ProductImageManager: React.FC<ProductImageManagerProps> = ({
   // Handle Retry Upload
   const handleRetryUpload = () => {
     if (selectedFile) {
+      userDidCancelRef.current = false;
       executeUpload(selectedFile);
     }
   };
@@ -549,7 +451,7 @@ export const ProductImageManager: React.FC<ProductImageManagerProps> = ({
             <ImageIcon className="w-4 h-4 text-blue-600" />
             <span>จัดการรูปภาพสินค้า (Product Images)</span>
           </label>
-          <span className="text-[11px] font-medium text-slate-600 bg-slate-100 px-2.5 py-0.5 rounded-full border border-slate-200">
+          <span className="text-[11px] font-semibold text-slate-700 bg-slate-100 px-2.5 py-0.5 rounded-full border border-slate-200">
             {allImages.length} / {maxImages} รูป
           </span>
         </div>
@@ -616,10 +518,10 @@ export const ProductImageManager: React.FC<ProductImageManagerProps> = ({
 
               <div>
                 <p className="text-xs md:text-sm font-bold text-slate-800">
-                  แตะเพื่อเลือกรูปภาพจากคลัง หรือลากไฟล์มาวางที่นี่
+                  แตะเพื่อเลือกรูปภาพจากเครื่อง หรือลากไฟล์มาวางที่นี่
                 </p>
                 <p className="text-[11px] text-slate-500 mt-0.5">
-                  รองรับ iPhone, iPad, Android, Windows, Mac (JPG, PNG, WebP สูงสุด {MAX_FILE_SIZE_MB}MB)
+                  รองรับ Windows, Mac, iPhone, iPad, Android (JPG, PNG, WebP สูงสุด {MAX_FILE_SIZE_MB}MB)
                 </p>
               </div>
 
@@ -651,8 +553,8 @@ export const ProductImageManager: React.FC<ProductImageManagerProps> = ({
                     </div>
                   )}
                   {uploadStatus === 'success' && (
-                    <div className="absolute inset-0 bg-emerald-600/80 flex items-center justify-center">
-                      <CheckCircle2 className="w-6 h-6 text-white" />
+                    <div className="absolute inset-0 bg-emerald-600/85 flex items-center justify-center">
+                      <Check className="w-6 h-6 text-white stroke-[3]" />
                     </div>
                   )}
                 </div>
@@ -673,13 +575,13 @@ export const ProductImageManager: React.FC<ProductImageManagerProps> = ({
                     {uploadStatus === 'uploading' && (
                       <span className="text-[11px] font-semibold text-blue-600 flex items-center gap-1">
                         <Loader2 className="w-3 h-3 animate-spin" />
-                        กำลังส่งรูปภาพ ({activeEngine === 'firebase' ? 'Firebase Storage' : 'App Storage'})...
+                        กำลังอัปโหลดรูปภาพ... ({uploadProgress}%)
                       </span>
                     )}
                     {uploadStatus === 'success' && (
                       <span className="text-[11px] font-semibold text-emerald-600 flex items-center gap-1">
                         <CheckCircle2 className="w-3.5 h-3.5" />
-                        อัปโหลดสำเร็จ บันทึกเข้าสู่สินค้าแล้ว
+                        อัปโหลดสำเร็จ บันทึกเข้าคลังภาพแล้ว
                       </span>
                     )}
                     {uploadStatus === 'error' && (
@@ -715,7 +617,7 @@ export const ProductImageManager: React.FC<ProductImageManagerProps> = ({
                     type="button"
                     onClick={handleClearSelected}
                     className="p-1 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition"
-                    title="ลบตัวอย่างนี้"
+                    title="ล้างรายการนี้"
                   >
                     <X className="w-4 h-4" />
                   </button>
@@ -728,12 +630,12 @@ export const ProductImageManager: React.FC<ProductImageManagerProps> = ({
                   <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden border border-slate-200">
                     <div
                       className="bg-blue-600 h-full transition-all duration-150"
-                      style={{ width: `${Math.max(uploadProgress, 2)}%` }}
+                      style={{ width: `${Math.max(uploadProgress, 5)}%` }}
                     />
                   </div>
                   <div className="flex items-center justify-between text-[10px] text-slate-400 font-mono">
                     <span>0%</span>
-                    <span>{uploadProgress}%</span>
+                    <span className="font-bold text-blue-600">{uploadProgress}%</span>
                     <span>100%</span>
                   </div>
                 </div>
@@ -745,7 +647,7 @@ export const ProductImageManager: React.FC<ProductImageManagerProps> = ({
                   <button
                     type="button"
                     onClick={handleCancelUpload}
-                    className="px-3 py-1.5 text-xs font-semibold text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition flex items-center gap-1"
+                    className="px-3 py-1.5 text-xs font-semibold text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition flex items-center gap-1 cursor-pointer"
                   >
                     <Ban className="w-3.5 h-3.5" />
                     <span>ยกเลิกการส่ง</span>
@@ -755,7 +657,7 @@ export const ProductImageManager: React.FC<ProductImageManagerProps> = ({
                     <button
                       type="button"
                       onClick={() => fileInputRef.current?.click()}
-                      className="px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-lg transition"
+                      className="px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-lg transition cursor-pointer"
                     >
                       เปลี่ยนรูปใหม่
                     </button>
@@ -763,7 +665,7 @@ export const ProductImageManager: React.FC<ProductImageManagerProps> = ({
                       <button
                         type="button"
                         onClick={handleRetryUpload}
-                        className="px-3.5 py-1.5 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition shadow-xs flex items-center gap-1"
+                        className="px-3.5 py-1.5 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition shadow-xs flex items-center gap-1 cursor-pointer"
                       >
                         <RotateCcw className="w-3.5 h-3.5" />
                         <span>ลองใหม่อีกครั้ง</span>
@@ -788,7 +690,7 @@ export const ProductImageManager: React.FC<ProductImageManagerProps> = ({
               <button
                 type="button"
                 onClick={() => setUploadErrorMessage('')}
-                className="text-red-400 hover:text-red-700 p-0.5"
+                className="text-red-400 hover:text-red-700 p-0.5 cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -839,7 +741,7 @@ export const ProductImageManager: React.FC<ProductImageManagerProps> = ({
               type="button"
               onClick={handleAddUrlImage}
               disabled={urlVerifyStatus !== 'valid' || isVerifyingUrl || allImages.length >= maxImages}
-              className="px-4 py-2 text-xs md:text-sm font-semibold bg-blue-600 hover:bg-blue-700 text-white rounded-xl transition shadow-xs disabled:opacity-40 disabled:cursor-not-allowed shrink-0 flex items-center gap-1.5"
+              className="px-4 py-2 text-xs md:text-sm font-semibold bg-blue-600 hover:bg-blue-700 text-white rounded-xl transition shadow-xs disabled:opacity-40 disabled:cursor-not-allowed shrink-0 flex items-center gap-1.5 cursor-pointer"
             >
               <Plus className="w-4 h-4" />
               <span>เพิ่มรูปภาพ</span>
@@ -853,7 +755,7 @@ export const ProductImageManager: React.FC<ProductImageManagerProps> = ({
               <button
                 type="button"
                 onClick={() => verifyImageUrl(urlInput)}
-                className="text-blue-600 hover:underline flex items-center gap-1"
+                className="text-blue-600 hover:underline flex items-center gap-1 cursor-pointer"
               >
                 <RefreshCw className="w-3 h-3" />
                 <span>ตรวจสอบใหม่</span>
@@ -947,20 +849,20 @@ export const ProductImageManager: React.FC<ProductImageManagerProps> = ({
 
                   {/* Main badge */}
                   {isMain && (
-                    <div className="absolute top-1.5 left-1.5 bg-blue-600 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-md shadow-xs flex items-center gap-1">
+                    <div className="absolute top-1.5 left-1.5 bg-blue-600 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-md shadow-xs flex items-center gap-1 z-10">
                       <Star className="w-2.5 h-2.5 fill-current" />
                       <span>ภาพหลัก</span>
                     </div>
                   )}
 
                   {/* Quick actions overlay */}
-                  <div className="absolute inset-0 bg-slate-900/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1.5 p-1">
+                  <div className="absolute inset-0 bg-slate-900/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1.5 p-1 z-20">
                     {/* Preview full screen */}
                     <button
                       type="button"
                       title="ดูภาพขนาดใหญ่"
                       onClick={() => setPreviewModalUrl(imgUrl)}
-                      className="p-1.5 bg-white/90 hover:bg-white text-slate-700 rounded-lg shadow-xs transition"
+                      className="p-1.5 bg-white/90 hover:bg-white text-slate-700 rounded-lg shadow-xs transition cursor-pointer"
                     >
                       <Eye className="w-3.5 h-3.5" />
                     </button>
@@ -971,7 +873,7 @@ export const ProductImageManager: React.FC<ProductImageManagerProps> = ({
                         type="button"
                         title="ตั้งเป็นภาพหลัก"
                         onClick={() => handleSetMain(imgUrl)}
-                        className="p-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg shadow-xs transition"
+                        className="p-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg shadow-xs transition cursor-pointer"
                       >
                         <Star className="w-3.5 h-3.5" />
                       </button>
@@ -982,7 +884,7 @@ export const ProductImageManager: React.FC<ProductImageManagerProps> = ({
                       type="button"
                       title="ลบรูปภาพนี้"
                       onClick={() => handleDeleteImage(imgUrl)}
-                      className="p-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg shadow-xs transition"
+                      className="p-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg shadow-xs transition cursor-pointer"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>
@@ -1009,7 +911,7 @@ export const ProductImageManager: React.FC<ProductImageManagerProps> = ({
               <button
                 type="button"
                 onClick={() => setPreviewModalUrl(null)}
-                className="p-1 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-100"
+                className="p-1 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-100 cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
