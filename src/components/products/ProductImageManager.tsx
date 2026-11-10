@@ -209,6 +209,7 @@ export const ProductImageManager: React.FC<ProductImageManagerProps> = ({
       reader.onload = () => {
         const base64Data = reader.result as string;
         const xhr = new XMLHttpRequest();
+        const uploadEndpoint = `${window.location.origin}/api/upload`;
 
         cancelUploadRef.current = () => {
           xhr.abort();
@@ -239,17 +240,34 @@ export const ProductImageManager: React.FC<ProductImageManagerProps> = ({
               reject(new Error('ข้อมูลตอบกลับจากเซิร์ฟเวอร์ไม่ถูกต้อง'));
             }
           } else {
+            console.error('[Upload Error]', {
+              status: xhr.status,
+              statusText: xhr.statusText,
+              responseURL: xhr.responseURL || uploadEndpoint,
+              response: xhr.responseText,
+            });
+
             let msg = `การอัปโหลดขัดข้อง (HTTP ${xhr.status})`;
+            if (xhr.status === 404) {
+              msg = 'เซิร์ฟเวอร์ขัดข้อง (HTTP 404): ไม่พบ API สำหรับอัปโหลด กรุณาลองใหม่อีกครั้ง';
+            } else if (xhr.status === 413) {
+              msg = 'ขนาดไฟล์เกินกำหนด (HTTP 413): ไฟล์ต้องไม่เกิน 5 MB';
+            } else if (xhr.status === 415) {
+              msg = 'ชนิดไฟล์ไม่ถูกต้อง (HTTP 415): รองรับเฉพาะ JPG, PNG, WebP, GIF';
+            }
+
             try {
               const errObj = JSON.parse(xhr.responseText);
               if (errObj.error) msg = errObj.error;
             } catch {}
+
             reject(new Error(msg));
           }
         };
 
         xhr.onerror = () => {
           cancelUploadRef.current = null;
+          console.error('[Upload Network Error] Could not connect to:', uploadEndpoint);
           reject(new Error('เกิดข้อผิดพลาดในการเชื่อมต่อเน็ตเวิร์ก (Network Error)'));
         };
 
@@ -258,9 +276,9 @@ export const ProductImageManager: React.FC<ProductImageManagerProps> = ({
           reject(new Error('การอัปโหลดหมดเวลาเชื่อมต่อ (Connection Timeout)'));
         };
 
-        xhr.open('POST', '/api/upload', true);
+        xhr.open('POST', uploadEndpoint, true);
         xhr.setRequestHeader('Content-Type', 'application/json');
-        xhr.timeout = 30000; // 30 seconds
+        xhr.timeout = 45000; // 45 seconds
 
         xhr.send(
           JSON.stringify({

@@ -5,11 +5,22 @@ import fs from 'fs';
 
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  const PORT = Number(process.env.PORT) || 3000;
 
-  // Middleware for JSON bodies up to 15MB
-  app.use(express.json({ limit: '15mb' }));
-  app.use(express.urlencoded({ extended: true, limit: '15mb' }));
+  // Global CORS Middleware
+  app.use((req, res, next) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, HEAD');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
+    if (req.method === 'OPTIONS') {
+      return res.sendStatus(204);
+    }
+    next();
+  });
+
+  // Middleware for JSON bodies up to 25MB
+  app.use(express.json({ limit: '25mb' }));
+  app.use(express.urlencoded({ extended: true, limit: '25mb' }));
 
   // Ensure public/uploads directory exists
   const uploadsDir = path.resolve(process.cwd(), 'public/uploads');
@@ -22,23 +33,33 @@ async function startServer() {
     maxAge: '1d',
     setHeaders: (res) => {
       res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Cache-Control', 'public, max-age=86400');
     }
   }));
 
-  // API upload route
-  app.post('/api/upload', (req, res) => {
+  // Ping / diagnostic endpoint
+  app.get(['/api/ping', '/api/upload/ping', '/api/health'], (req, res) => {
+    res.status(200).json({ status: 'ok', service: 'pos-upload-api', timestamp: new Date().toISOString() });
+  });
+
+  // Handler for image upload
+  const handleUpload = (req: express.Request, res: express.Response) => {
     try {
-      const { filename, mimeType, base64 } = req.body;
+      const { filename, mimeType, base64 } = req.body || {};
 
       if (!base64 || !filename) {
-        return res.status(400).json({ error: 'Missing file data or filename' });
+        return res.status(400).json({
+          error: 'ไม่พบข้อมูลไฟล์รูปภาพหรือชื่อไฟล์ (Missing base64 or filename)'
+        });
       }
 
       // Validate MIME type
       const allowedMimes = ['image/jpeg', 'image/png', 'image/webp', 'image/jpg', 'image/gif'];
       const effectiveMime = (mimeType || '').toLowerCase();
       if (effectiveMime && !allowedMimes.includes(effectiveMime)) {
-        return res.status(415).json({ error: 'Unsupported file type. Only JPG, PNG, WebP, GIF allowed.' });
+        return res.status(415).json({
+          error: 'ชนิดไฟล์ไม่ถูกต้อง รองรับเฉพาะ JPG, JPEG, PNG, WebP และ GIF เท่านั้น'
+        });
       }
 
       // Clean base64 string
@@ -47,7 +68,9 @@ async function startServer() {
 
       // Max size check: 5MB
       if (buffer.length > 5 * 1024 * 1024) {
-        return res.status(413).json({ error: 'File size exceeds 5MB limit' });
+        return res.status(413).json({
+          error: `ขนาดไฟล์ (${(buffer.length / (1024 * 1024)).toFixed(2)} MB) เกินขีดจำกัด 5 MB`
+        });
       }
 
       // Generate unique safe file name
@@ -70,21 +93,32 @@ async function startServer() {
       });
     } catch (err: any) {
       console.error('[Upload] Error processing upload:', err);
-      return res.status(500).json({ error: err.message || 'Internal server error while saving file' });
+      return res.status(500).json({
+        error: err.message || 'เกิดข้อผิดพลาดในการบันทึกรูปภาพบนเซิร์ฟเวอร์'
+      });
     }
-  });
+  };
 
-  // Health check endpoint
-  app.get('/api/health', (req, res) => {
-    res.json({ status: 'ok', timestamp: new Date().toISOString() });
-  });
+  // Register API upload on multiple endpoint patterns to avoid any trailing slash or prefix issues
+  app.post('/api/upload', handleUpload);
+  app.post('/api/upload/', handleUpload);
 
-  // Mount Vite dev server middlewares
-  const vite = await createViteServer({
-    server: { middlewareMode: true },
-    appType: 'spa',
-  });
-  app.use(vite.middlewares);
+  // Mount Vite dev server middlewares or static dist
+  const isProduction = process.env.NODE_ENV === 'production';
+  const distPath = path.resolve(process.cwd(), 'dist');
+
+  if (isProduction && fs.existsSync(distPath)) {
+    app.use(express.static(distPath));
+    app.get('*', (req, res) => {
+      res.sendFile(path.join(distPath, 'index.html'));
+    });
+  } else {
+    const vite = await createViteServer({
+      server: { middlewareMode: true },
+      appType: 'spa',
+    });
+    app.use(vite.middlewares);
+  }
 
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`🚀 POS Server running on http://0.0.0.0:${PORT}`);
