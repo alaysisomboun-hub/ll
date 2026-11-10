@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   UploadCloud,
   Link2,
@@ -11,7 +11,11 @@ import {
   Image as ImageIcon,
   Plus,
   RefreshCw,
-  X
+  X,
+  RotateCcw,
+  Ban,
+  FileImage,
+  Server
 } from 'lucide-react';
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { storage } from '../../firebase';
@@ -44,13 +48,38 @@ export const ProductImageManager: React.FC<ProductImageManagerProps> = ({
 
   // Device upload state
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [instantPreviewUrl, setInstantPreviewUrl] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState<boolean>(false);
   const [uploadProgress, setUploadProgress] = useState<number>(0);
+  const [bytesTransferred, setBytesTransferred] = useState<number>(0);
+  const [totalBytes, setTotalBytes] = useState<number>(0);
+  const [uploadStatus, setUploadStatus] = useState<'idle' | 'preparing' | 'uploading' | 'success' | 'error' | 'cancelled'>('idle');
   const [uploadErrorMessage, setUploadErrorMessage] = useState<string>('');
+  const [activeEngine, setActiveEngine] = useState<'firebase' | 'server'>('firebase');
   const [isDragOver, setIsDragOver] = useState<boolean>(false);
 
-  // Preview modal
+  // Active upload canceller
+  const cancelUploadRef = useRef<(() => void) | null>(null);
+  const timeoutTimerRef = useRef<any>(null);
+
+  // Large preview modal
   const [previewModalUrl, setPreviewModalUrl] = useState<string | null>(null);
+
+  // Cleanup object URLs on unmount
+  useEffect(() => {
+    return () => {
+      if (instantPreviewUrl && instantPreviewUrl.startsWith('blob:')) {
+        URL.revokeObjectURL(instantPreviewUrl);
+      }
+      if (timeoutTimerRef.current) {
+        clearTimeout(timeoutTimerRef.current);
+      }
+      if (cancelUploadRef.current) {
+        cancelUploadRef.current();
+      }
+    };
+  }, [instantPreviewUrl]);
 
   // Normalize image list (unique, non-empty, main image always included)
   const allImages = React.useMemo(() => {
@@ -70,11 +99,19 @@ export const ProductImageManager: React.FC<ProductImageManagerProps> = ({
   const cleanUrl = (raw: string): string => {
     let trimmed = raw.trim();
     if (!trimmed) return '';
-    // Auto add https:// if scheme is missing but looks like a domain
     if (!/^https?:\/\//i.test(trimmed)) {
       trimmed = 'https://' + trimmed;
     }
     return trimmed;
+  };
+
+  // Format bytes helper
+  const formatBytes = (bytes: number): string => {
+    if (!bytes || bytes <= 0) return '0 KB';
+    if (bytes >= 1024 * 1024) {
+      return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
+    }
+    return Math.round(bytes / 1024) + ' KB';
   };
 
   // Real-time URL Image verification
@@ -151,7 +188,6 @@ export const ProductImageManager: React.FC<ProductImageManagerProps> = ({
       return;
     }
 
-    // If no main image exists, set this as main image
     let newMain = mainImageUrl;
     let newGallery = [...galleryImages];
 
@@ -167,8 +203,239 @@ export const ProductImageManager: React.FC<ProductImageManagerProps> = ({
     setVerifiedUrlPreview('');
   };
 
-  // Handle Device File Upload
-  const handleFileSelected = async (file: File) => {
+  // Upload file via App Server endpoint (/api/upload) with genuine XMLHttpRequest progress
+  const uploadViaServer = useCallback((file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+
+      reader.onerror = () => {
+        reject(new Error('ไม่สามารถอ่านไฟล์รูปภาพจากอุปกรณ์ได้'));
+      };
+
+      reader.onload = () => {
+        const base64Data = reader.result as string;
+        const xhr = new XMLHttpRequest();
+
+        cancelUploadRef.current = () => {
+          xhr.abort();
+          reject(new Error('USER_CANCELLED'));
+        };
+
+        xhr.upload.onprogress = (event) => {
+          if (event.lengthComputable && event.total > 0) {
+            const pct = Math.round((event.loaded / event.total) * 100);
+            setUploadProgress(pct);
+            setBytesTransferred(event.loaded);
+            setTotalBytes(event.total);
+          }
+        };
+
+        xhr.onload = () => {
+          cancelUploadRef.current = null;
+          if (xhr.status >= 200 && xhr.status < 300) {
+            try {
+              const res = JSON.parse(xhr.responseText);
+              if (res.url) {
+                setUploadProgress(100);
+                resolve(res.url);
+              } else {
+                reject(new Error('เซิร์ฟเวอร์ไม่ส่ง URL รูปภาพกลับมา'));
+              }
+            } catch (parseErr) {
+              reject(new Error('เซิร์ฟเวอร์ส่งข้อมูลตอบกลับไม่ถูกต้อง'));
+            }
+          } else {
+            let msg = `เซิร์ฟเวอร์ขัดข้อง (HTTP ${xhr.status})`;
+            try {
+              const errObj = JSON.parse(xhr.responseText);
+              if (errObj.error) msg = errObj.error;
+            } catch {}
+            reject(new Error(msg));
+          }
+        };
+
+        xhr.onerror = () => {
+          cancelUploadRef.current = null;
+          reject(new Error('เกิดข้อผิดพลาดในการเชื่อมต่อเน็ตเวิร์ก (Network Error)'));
+        };
+
+        xhr.ontimeout = () => {
+          cancelUploadRef.current = null;
+          reject(new Error('การอัปโหลดหมดเวลาเชื่อมต่อ (Connection Timeout)'));
+        };
+
+        xhr.open('POST', '/api/upload', true);
+        xhr.setRequestHeader('Content-Type', 'application/json');
+        xhr.timeout = 30000; // 30s timeout
+
+        xhr.send(
+          JSON.stringify({
+            filename: file.name,
+            mimeType: file.type || 'image/jpeg',
+            base64: base64Data,
+          })
+        );
+      };
+
+      reader.readAsDataURL(file);
+    });
+  }, []);
+
+  // Upload file via Firebase Storage resumable upload
+  const uploadViaFirebase = useCallback((file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      try {
+        const safeName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
+        const filename = `products/${Date.now()}_${safeName}`;
+        const storageRef = ref(storage, filename);
+
+        const uploadTask = uploadBytesResumable(storageRef, file, {
+          contentType: file.type,
+        });
+
+        // Set cancel hook
+        cancelUploadRef.current = () => {
+          try {
+            uploadTask.cancel();
+          } catch {}
+          reject(new Error('USER_CANCELLED'));
+        };
+
+        // Strict connection timeout: if Firebase Storage is 404 or hangs, fail fast to fallback
+        const connectionTimeout = setTimeout(() => {
+          if (uploadTask.snapshot.bytesTransferred === 0) {
+            try {
+              uploadTask.cancel();
+            } catch {}
+            reject(new Error('FIREBASE_STORAGE_UNAVAILABLE'));
+          }
+        }, 6000);
+
+        uploadTask.on(
+          'state_changed',
+          (snapshot) => {
+            if (snapshot.bytesTransferred > 0) {
+              clearTimeout(connectionTimeout);
+            }
+            const transferred = snapshot.bytesTransferred;
+            const total = snapshot.totalBytes;
+            setBytesTransferred(transferred);
+            setTotalBytes(total);
+
+            // Genuine progress calculation: strictly from bytesTransferred / totalBytes
+            const progress = total > 0 ? Math.round((transferred / total) * 100) : 0;
+            setUploadProgress(progress);
+          },
+          (error) => {
+            clearTimeout(connectionTimeout);
+            cancelUploadRef.current = null;
+            reject(error);
+          },
+          async () => {
+            clearTimeout(connectionTimeout);
+            cancelUploadRef.current = null;
+            try {
+              const downloadUrl = await getDownloadURL(uploadTask.snapshot.ref);
+              resolve(downloadUrl);
+            } catch (err) {
+              reject(err);
+            }
+          }
+        );
+      } catch (err) {
+        reject(err);
+      }
+    });
+  }, []);
+
+  // Execute full upload process with automatic fallback and genuine error reporting
+  const executeUpload = async (file: File) => {
+    setIsUploading(true);
+    setUploadStatus('uploading');
+    setUploadProgress(0);
+    setBytesTransferred(0);
+    setTotalBytes(file.size);
+    setUploadErrorMessage('');
+
+    let finalDownloadUrl: string | null = null;
+
+    // Phase 1: Try Firebase Storage resumable upload
+    try {
+      setActiveEngine('firebase');
+      finalDownloadUrl = await uploadViaFirebase(file);
+    } catch (fbErr: any) {
+      // Check if user manually cancelled
+      if (fbErr?.message === 'USER_CANCELLED' || fbErr?.code === 'storage/canceled') {
+        setIsUploading(false);
+        setUploadStatus('cancelled');
+        setUploadProgress(0);
+        setUploadErrorMessage('ยกเลิกการอัปโหลดเรียบร้อยแล้ว');
+        return;
+      }
+
+      console.warn('Firebase Storage upload failed or not provisioned, switching to App Server Storage:', fbErr);
+
+      // Phase 2: Automatic fallback to App Server Storage (/api/upload)
+      try {
+        setActiveEngine('server');
+        setUploadErrorMessage(
+          'Firebase Storage ไม่พร้อมใช้งาน กำลังสลับไปอัปโหลดผ่าน App Server Storage อัตโนมัติ...'
+        );
+        finalDownloadUrl = await uploadViaServer(file);
+      } catch (serverErr: any) {
+        if (serverErr?.message === 'USER_CANCELLED') {
+          setIsUploading(false);
+          setUploadStatus('cancelled');
+          setUploadProgress(0);
+          setUploadErrorMessage('ยกเลิกการอัปโหลดเรียบร้อยแล้ว');
+          return;
+        }
+
+        console.error('All upload engines failed:', serverErr);
+        setIsUploading(false);
+        setUploadStatus('error');
+        setUploadErrorMessage(
+          `อัปโหลดไม่สำเร็จ: ${serverErr?.message || fbErr?.message || 'ไม่สามารถส่งรูปภาพได้ กรุณาตรวจสอบการเชื่อมต่ออินเทอร์เน็ต'}`
+        );
+        return;
+      }
+    }
+
+    // Phase 3: Successful upload completion
+    if (finalDownloadUrl) {
+      setIsUploading(false);
+      setUploadStatus('success');
+      setUploadProgress(100);
+      setUploadErrorMessage('');
+
+      // Add to product images and update parent immediately
+      let newMain = mainImageUrl;
+      let newGallery = [...galleryImages];
+
+      if (!newMain) {
+        newMain = finalDownloadUrl;
+      } else {
+        if (!newGallery.includes(finalDownloadUrl)) {
+          newGallery.push(finalDownloadUrl);
+        }
+      }
+
+      onChange(newMain, newGallery);
+
+      // Clean up local instant preview after successful sync
+      setTimeout(() => {
+        setSelectedFile(null);
+        if (instantPreviewUrl && instantPreviewUrl.startsWith('blob:')) {
+          URL.revokeObjectURL(instantPreviewUrl);
+        }
+        setInstantPreviewUrl(null);
+        setUploadStatus('idle');
+      }, 1500);
+    }
+  };
+
+  // Handle file selection from gallery or camera
+  const handleFileSelected = (file: File) => {
     setUploadErrorMessage('');
 
     // Check MIME type
@@ -191,71 +458,58 @@ export const ProductImageManager: React.FC<ProductImageManagerProps> = ({
       return;
     }
 
-    try {
-      setIsUploading(true);
-      setUploadProgress(5);
-
-      // Unique storage filename: products/{timestamp}_{sanitized}
-      const safeName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
-      const filename = `products/${Date.now()}_${safeName}`;
-      const storageRef = ref(storage, filename);
-
-      const uploadTask = uploadBytesResumable(storageRef, file, {
-        contentType: file.type,
-      });
-
-      uploadTask.on(
-        'state_changed',
-        (snapshot) => {
-          const progress = Math.round(
-            (snapshot.bytesTransferred / snapshot.totalBytes) * 100
-          );
-          setUploadProgress(Math.max(progress, 10));
-        },
-        (error) => {
-          console.error('Firebase Storage upload error:', error);
-          setIsUploading(false);
-          setUploadProgress(0);
-          setUploadErrorMessage(
-            `อัปโหลดไม่สำเร็จ: ${error.message || 'เกิดข้อผิดพลาดในการเชื่อมต่อ Storage'}`
-          );
-        },
-        async () => {
-          try {
-            const downloadUrl = await getDownloadURL(uploadTask.snapshot.ref);
-            setIsUploading(false);
-            setUploadProgress(100);
-
-            let newMain = mainImageUrl;
-            let newGallery = [...galleryImages];
-
-            if (!newMain) {
-              newMain = downloadUrl;
-            } else {
-              newGallery.push(downloadUrl);
-            }
-
-            onChange(newMain, newGallery);
-            setTimeout(() => setUploadProgress(0), 1000);
-          } catch (downloadErr: any) {
-            console.error('Error getting download URL:', downloadErr);
-            setIsUploading(false);
-            setUploadErrorMessage('เกิดข้อผิดพลาดในการดึงลิงก์รูปภาพ');
-          }
-        }
-      );
-    } catch (err: any) {
-      console.error('Upload exception:', err);
-      setIsUploading(false);
-      setUploadErrorMessage(`เกิดข้อผิดพลาด: ${err.message || 'ไม่สามารถอัปโหลดได้'}`);
+    // Revoke previous blob URL if exists
+    if (instantPreviewUrl && instantPreviewUrl.startsWith('blob:')) {
+      URL.revokeObjectURL(instantPreviewUrl);
     }
+
+    // STEP 1: Show Instant Preview immediately
+    const localUrl = URL.createObjectURL(file);
+    setSelectedFile(file);
+    setInstantPreviewUrl(localUrl);
+    setUploadStatus('preparing');
+    setUploadProgress(0);
+    setBytesTransferred(0);
+    setTotalBytes(file.size);
+
+    // STEP 2: Start upload automatically
+    executeUpload(file);
+  };
+
+  // Handle Cancel Upload
+  const handleCancelUpload = () => {
+    if (cancelUploadRef.current) {
+      cancelUploadRef.current();
+    }
+    setIsUploading(false);
+    setUploadStatus('cancelled');
+    setUploadProgress(0);
+    setUploadErrorMessage('ยกเลิกการอัปโหลดแล้ว');
+  };
+
+  // Handle Retry Upload
+  const handleRetryUpload = () => {
+    if (selectedFile) {
+      executeUpload(selectedFile);
+    }
+  };
+
+  // Handle Clear Selected File
+  const handleClearSelected = () => {
+    handleCancelUpload();
+    setSelectedFile(null);
+    if (instantPreviewUrl && instantPreviewUrl.startsWith('blob:')) {
+      URL.revokeObjectURL(instantPreviewUrl);
+    }
+    setInstantPreviewUrl(null);
+    setUploadStatus('idle');
+    setUploadErrorMessage('');
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       handleFileSelected(e.target.files[0]);
     }
-    // reset input so same file can be selected again
     e.target.value = '';
   };
 
@@ -295,7 +549,7 @@ export const ProductImageManager: React.FC<ProductImageManagerProps> = ({
             <ImageIcon className="w-4 h-4 text-blue-600" />
             <span>จัดการรูปภาพสินค้า (Product Images)</span>
           </label>
-          <span className="text-[11px] font-medium text-slate-500 bg-slate-100 px-2.5 py-0.5 rounded-full">
+          <span className="text-[11px] font-medium text-slate-600 bg-slate-100 px-2.5 py-0.5 rounded-full border border-slate-200">
             {allImages.length} / {maxImages} รูป
           </span>
         </div>
@@ -331,7 +585,7 @@ export const ProductImageManager: React.FC<ProductImageManagerProps> = ({
 
       {/* Mode A: Device File Upload */}
       {activeTab === 'upload' && (
-        <div className="space-y-2">
+        <div className="space-y-3">
           <input
             ref={fileInputRef}
             type="file"
@@ -340,74 +594,195 @@ export const ProductImageManager: React.FC<ProductImageManagerProps> = ({
             className="hidden"
           />
 
-          <div
-            onDragOver={(e) => {
-              e.preventDefault();
-              setIsDragOver(true);
-            }}
-            onDragLeave={() => setIsDragOver(false)}
-            onDrop={handleDrop}
-            onClick={() => fileInputRef.current?.click()}
-            className={`border-2 border-dashed rounded-2xl p-4 md:p-6 text-center cursor-pointer transition flex flex-col items-center justify-center gap-2 select-none ${
-              isDragOver
-                ? 'border-blue-500 bg-blue-50/80 scale-[1.01]'
-                : 'border-slate-300 bg-slate-50/60 hover:bg-blue-50/40 hover:border-blue-400'
-            }`}
-          >
-            <div className="w-12 h-12 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 shadow-xs">
-              {isUploading ? (
-                <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
-              ) : (
-                <UploadCloud className="w-6 h-6" />
-              )}
-            </div>
-
-            <div>
-              <p className="text-xs md:text-sm font-bold text-slate-800">
-                {isUploading ? 'กำลังอัปโหลดขึ้นคลาวด์...' : 'แตะเพื่อเลือกรูปภาพ หรือลากไฟล์มาวางที่นี่'}
-              </p>
-              <p className="text-[11px] text-slate-500 mt-0.5">
-                รองรับ iPhone, iPad, Android, Windows, Mac (JPG, PNG, WebP สูงสุด {MAX_FILE_SIZE_MB}MB)
-              </p>
-            </div>
-
-            <button
-              type="button"
-              disabled={isUploading || allImages.length >= maxImages}
-              className="mt-1 px-4 py-1.5 text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition shadow-xs flex items-center gap-1.5 disabled:opacity-50"
+          {/* Upload Dropzone */}
+          {!instantPreviewUrl && (
+            <div
+              onDragOver={(e) => {
+                e.preventDefault();
+                setIsDragOver(true);
+              }}
+              onDragLeave={() => setIsDragOver(false)}
+              onDrop={handleDrop}
+              onClick={() => fileInputRef.current?.click()}
+              className={`border-2 border-dashed rounded-2xl p-5 md:p-6 text-center cursor-pointer transition flex flex-col items-center justify-center gap-2.5 select-none ${
+                isDragOver
+                  ? 'border-blue-500 bg-blue-50/80 scale-[1.01]'
+                  : 'border-slate-300 bg-slate-50/60 hover:bg-blue-50/40 hover:border-blue-400'
+              }`}
             >
-              <Plus className="w-3.5 h-3.5" />
-              <span>เลือกไฟล์จากอุปกรณ์</span>
-            </button>
-          </div>
-
-          {/* Upload Progress Bar */}
-          {isUploading && (
-            <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl space-y-1.5">
-              <div className="flex items-center justify-between text-xs text-blue-900 font-medium">
-                <span className="flex items-center gap-1.5">
-                  <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-600" />
-                  กำลังส่งรูปภาพขึ้น Firebase Storage...
-                </span>
-                <span className="font-mono font-bold">{uploadProgress}%</span>
+              <div className="w-12 h-12 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 shadow-xs">
+                <UploadCloud className="w-6 h-6" />
               </div>
-              <div className="w-full bg-blue-200 h-2 rounded-full overflow-hidden">
-                <div
-                  className="bg-blue-600 h-full transition-all duration-200"
-                  style={{ width: `${uploadProgress}%` }}
-                />
+
+              <div>
+                <p className="text-xs md:text-sm font-bold text-slate-800">
+                  แตะเพื่อเลือกรูปภาพจากคลัง หรือลากไฟล์มาวางที่นี่
+                </p>
+                <p className="text-[11px] text-slate-500 mt-0.5">
+                  รองรับ iPhone, iPad, Android, Windows, Mac (JPG, PNG, WebP สูงสุด {MAX_FILE_SIZE_MB}MB)
+                </p>
+              </div>
+
+              <button
+                type="button"
+                disabled={allImages.length >= maxImages}
+                className="mt-1 px-4 py-2 text-xs font-semibold bg-blue-600 hover:bg-blue-700 active:scale-95 text-white rounded-xl transition shadow-xs flex items-center gap-1.5 disabled:opacity-50"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>เลือกไฟล์จากอุปกรณ์</span>
+              </button>
+            </div>
+          )}
+
+          {/* Instant Preview Card (Displays immediately when file is picked) */}
+          {instantPreviewUrl && selectedFile && (
+            <div className="p-3.5 bg-white border border-slate-200 rounded-2xl shadow-xs space-y-3 animate-in fade-in">
+              <div className="flex items-start gap-3">
+                {/* Instant Image Thumbnail */}
+                <div className="relative w-16 h-16 rounded-xl overflow-hidden border border-slate-200 bg-slate-100 shrink-0 shadow-2xs">
+                  <img
+                    src={instantPreviewUrl}
+                    alt="Instant Preview"
+                    className="w-full h-full object-cover"
+                  />
+                  {isUploading && (
+                    <div className="absolute inset-0 bg-blue-950/40 backdrop-blur-2xs flex items-center justify-center">
+                      <Loader2 className="w-5 h-5 text-white animate-spin" />
+                    </div>
+                  )}
+                  {uploadStatus === 'success' && (
+                    <div className="absolute inset-0 bg-emerald-600/80 flex items-center justify-center">
+                      <CheckCircle2 className="w-6 h-6 text-white" />
+                    </div>
+                  )}
+                </div>
+
+                {/* File info and status */}
+                <div className="flex-1 min-w-0 pr-1">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-xs font-bold text-slate-900 truncate">
+                      {selectedFile.name}
+                    </p>
+                    <span className="text-[10px] font-mono font-medium text-slate-500 shrink-0">
+                      {formatBytes(selectedFile.size)}
+                    </span>
+                  </div>
+
+                  {/* Status text */}
+                  <div className="mt-1 flex items-center gap-1.5">
+                    {uploadStatus === 'uploading' && (
+                      <span className="text-[11px] font-semibold text-blue-600 flex items-center gap-1">
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                        กำลังส่งรูปภาพ ({activeEngine === 'firebase' ? 'Firebase Storage' : 'App Storage'})...
+                      </span>
+                    )}
+                    {uploadStatus === 'success' && (
+                      <span className="text-[11px] font-semibold text-emerald-600 flex items-center gap-1">
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                        อัปโหลดสำเร็จ บันทึกเข้าสู่สินค้าแล้ว
+                      </span>
+                    )}
+                    {uploadStatus === 'error' && (
+                      <span className="text-[11px] font-semibold text-red-600 flex items-center gap-1">
+                        <AlertCircle className="w-3.5 h-3.5" />
+                        อัปโหลดไม่สำเร็จ
+                      </span>
+                    )}
+                    {uploadStatus === 'cancelled' && (
+                      <span className="text-[11px] font-semibold text-slate-500 flex items-center gap-1">
+                        <Ban className="w-3.5 h-3.5" />
+                        ยกเลิกการส่งแล้ว
+                      </span>
+                    )}
+                    {uploadStatus === 'preparing' && (
+                      <span className="text-[11px] text-slate-500">
+                        เตรียมส่งข้อมูล...
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Byte counter */}
+                  {isUploading && (
+                    <p className="text-[10px] text-slate-500 font-mono mt-0.5">
+                      {formatBytes(bytesTransferred)} / {formatBytes(totalBytes)} ({uploadProgress}%)
+                    </p>
+                  )}
+                </div>
+
+                {/* Clear / Dismiss button */}
+                {!isUploading && (
+                  <button
+                    type="button"
+                    onClick={handleClearSelected}
+                    className="p-1 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition"
+                    title="ลบตัวอย่างนี้"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+
+              {/* Genuine Progress Bar (0 - 100%) */}
+              {isUploading && (
+                <div className="space-y-1">
+                  <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden border border-slate-200">
+                    <div
+                      className="bg-blue-600 h-full transition-all duration-150"
+                      style={{ width: `${Math.max(uploadProgress, 2)}%` }}
+                    />
+                  </div>
+                  <div className="flex items-center justify-between text-[10px] text-slate-400 font-mono">
+                    <span>0%</span>
+                    <span>{uploadProgress}%</span>
+                    <span>100%</span>
+                  </div>
+                </div>
+              )}
+
+              {/* Action buttons (Cancel / Retry / Change) */}
+              <div className="flex items-center justify-end gap-2 pt-1 border-t border-slate-100">
+                {isUploading ? (
+                  <button
+                    type="button"
+                    onClick={handleCancelUpload}
+                    className="px-3 py-1.5 text-xs font-semibold text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition flex items-center gap-1"
+                  >
+                    <Ban className="w-3.5 h-3.5" />
+                    <span>ยกเลิกการส่ง</span>
+                  </button>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-lg transition"
+                    >
+                      เปลี่ยนรูปใหม่
+                    </button>
+                    {(uploadStatus === 'error' || uploadStatus === 'cancelled') && (
+                      <button
+                        type="button"
+                        onClick={handleRetryUpload}
+                        className="px-3.5 py-1.5 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition shadow-xs flex items-center gap-1"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5" />
+                        <span>ลองใหม่อีกครั้ง</span>
+                      </button>
+                    )}
+                  </>
+                )}
               </div>
             </div>
           )}
 
           {/* Upload Error Banner */}
-          {uploadErrorMessage && (
-            <div className="p-3 bg-red-50 border border-red-200 rounded-xl flex items-start gap-2 text-xs text-red-700">
+          {uploadErrorMessage && uploadStatus === 'error' && (
+            <div className="p-3 bg-red-50 border border-red-200 rounded-xl flex items-start gap-2.5 text-xs text-red-700">
               <AlertCircle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
               <div className="flex-1">
                 <p className="font-semibold">{uploadErrorMessage}</p>
-                <p className="text-[11px] text-red-500 mt-0.5">
-                  เคล็ดลับ: หากอัปโหลดไฟล์ไม่สำเร็จ ท่านสามารถใช้แท็บ "ใส่ลิงก์ URL รูปภาพ" แทนได้ทันที
+                <p className="text-[11px] text-red-500 mt-1">
+                  สามารถกดปุ่ม "ลองใหม่อีกครั้ง" หรือสลับไปใช้แท็บ "ใส่ลิงก์ URL รูปภาพ" ได้ทันที
                 </p>
               </div>
               <button
@@ -558,7 +933,6 @@ export const ProductImageManager: React.FC<ProductImageManagerProps> = ({
                     alt={`Product image ${index + 1}`}
                     className="w-full h-full object-cover"
                     onError={(e) => {
-                      // Fallback icon placeholder if external URL is blocked later
                       e.currentTarget.style.display = 'none';
                       const fallback = e.currentTarget.parentElement?.querySelector('.fallback-placeholder');
                       if (fallback) fallback.classList.remove('hidden');
@@ -627,7 +1001,7 @@ export const ProductImageManager: React.FC<ProductImageManagerProps> = ({
           onClick={() => setPreviewModalUrl(null)}
         >
           <div
-            className="relative max-w-xl w-full bg-white rounded-2xl overflow-hidden shadow-2xl p-2"
+            className="relative max-w-xl w-full bg-white rounded-2xl overflow-hidden shadow-2xl p-2 border border-slate-200"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between px-3 py-2 border-b border-slate-100">
