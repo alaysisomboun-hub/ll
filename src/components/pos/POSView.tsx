@@ -897,7 +897,26 @@ export const POSView: React.FC = () => {
                         key={item.product.id}
                         className="p-3 bg-white border border-slate-200/90 rounded-2xl shadow-2xs space-y-2.5"
                       >
-                        <div className="flex items-start justify-between gap-2">
+                        <div className="flex items-start justify-between gap-2.5">
+                          {/* Cart Item Thumbnail */}
+                          <div className="w-11 h-11 rounded-xl bg-slate-100 overflow-hidden shrink-0 border border-slate-200 flex items-center justify-center relative">
+                            {item.product.imageUrl ? (
+                              <img
+                                src={item.product.imageUrl}
+                                alt={item.product.name}
+                                className="w-full h-full object-cover"
+                                onError={(e) => {
+                                  e.currentTarget.style.display = 'none';
+                                  const fb = e.currentTarget.parentElement?.querySelector('.cart-fallback');
+                                  if (fb) fb.classList.remove('hidden');
+                                }}
+                              />
+                            ) : null}
+                            <div className={`cart-fallback ${item.product.imageUrl ? 'hidden' : ''} absolute inset-0 bg-slate-100 flex items-center justify-center`}>
+                              <Tag className="w-4 h-4 text-slate-400" />
+                            </div>
+                          </div>
+
                           <div className="flex-1 min-w-0 pr-1">
                             <div className="flex items-center gap-1.5 flex-wrap">
                               <span className="font-bold text-xs sm:text-sm text-slate-900 line-clamp-2 break-words">
@@ -1128,14 +1147,29 @@ export const POSView: React.FC = () => {
                       >
                         <div className="w-full h-20 rounded-xl bg-slate-50 border border-slate-100 overflow-hidden relative mb-2 flex items-center justify-center">
                           {product.imageUrl ? (
-                            <img
-                              src={product.imageUrl}
-                              alt={product.name}
-                              className="w-full h-full object-cover"
-                              loading="lazy"
-                            />
+                            <>
+                              <img
+                                src={product.imageUrl}
+                                alt={product.name}
+                                className="w-full h-full object-cover"
+                                loading="lazy"
+                                onError={(e) => {
+                                  e.currentTarget.style.display = 'none';
+                                  const fb = e.currentTarget.parentElement?.querySelector('.pos-mobile-fb');
+                                  if (fb) fb.classList.remove('hidden');
+                                }}
+                              />
+                              <div className="pos-mobile-fb hidden absolute inset-0 bg-slate-50 flex items-center justify-center">
+                                <Tag className="w-6 h-6 text-slate-300" />
+                              </div>
+                            </>
                           ) : (
                             <Tag className="w-6 h-6 text-slate-300" />
+                          )}
+                          {product.images && product.images.length > 1 && (
+                            <span className="absolute bottom-1 left-1 bg-slate-900/70 text-white text-[8px] font-bold px-1 rounded-xs">
+                              +{product.images.length - 1}
+                            </span>
                           )}
                           <span
                             className={`absolute top-1.5 right-1.5 px-1.5 py-0.5 rounded text-[9px] font-bold shadow-xs ${
@@ -1432,14 +1466,29 @@ export const POSView: React.FC = () => {
                         {/* Image / Thumbnail */}
                         <div className="w-full h-24 rounded-xl bg-slate-50 border border-slate-100 overflow-hidden relative mb-2.5 flex items-center justify-center">
                           {product.imageUrl ? (
-                            <img
-                              src={product.imageUrl}
-                              alt={product.name}
-                              className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
-                              loading="lazy"
-                            />
+                            <>
+                              <img
+                                src={product.imageUrl}
+                                alt={product.name}
+                                className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
+                                loading="lazy"
+                                onError={(e) => {
+                                  e.currentTarget.style.display = 'none';
+                                  const fb = e.currentTarget.parentElement?.querySelector('.pos-desktop-fb');
+                                  if (fb) fb.classList.remove('hidden');
+                                }}
+                              />
+                              <div className="pos-desktop-fb hidden absolute inset-0 bg-slate-50 flex items-center justify-center">
+                                <Tag className="w-7 h-7 text-slate-300" />
+                              </div>
+                            </>
                           ) : (
                             <Tag className="w-7 h-7 text-slate-300" />
+                          )}
+                          {product.images && product.images.length > 1 && (
+                            <span className="absolute bottom-1.5 left-1.5 bg-slate-900/70 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-sm shadow-xs">
+                              +{product.images.length - 1} รูป
+                            </span>
                           )}
 
                           {/* Stock Badge */}

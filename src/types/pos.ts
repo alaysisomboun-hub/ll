@@ -37,6 +37,7 @@ export interface Product {
   stockQty: number;
   minStockAlert: number;
   imageUrl?: string;
+  images?: string[];
   description?: string;
   isActive: boolean;
   createdAt?: string;

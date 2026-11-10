@@ -1,0 +1,655 @@
+import React, { useState, useRef, useEffect } from 'react';
+import {
+  UploadCloud,
+  Link2,
+  CheckCircle2,
+  AlertCircle,
+  Trash2,
+  Star,
+  Eye,
+  Loader2,
+  Image as ImageIcon,
+  Plus,
+  RefreshCw,
+  X
+} from 'lucide-react';
+import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
+import { storage } from '../../firebase';
+
+interface ProductImageManagerProps {
+  mainImageUrl: string;
+  galleryImages: string[];
+  onChange: (mainUrl: string, gallery: string[]) => void;
+  maxImages?: number;
+}
+
+const MAX_FILE_SIZE_MB = 5;
+const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
+const ALLOWED_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/jpg', 'image/gif'];
+
+export const ProductImageManager: React.FC<ProductImageManagerProps> = ({
+  mainImageUrl,
+  galleryImages = [],
+  onChange,
+  maxImages = 6,
+}) => {
+  const [activeTab, setActiveTab] = useState<'upload' | 'url'>('upload');
+
+  // URL state
+  const [urlInput, setUrlInput] = useState<string>('');
+  const [isVerifyingUrl, setIsVerifyingUrl] = useState<boolean>(false);
+  const [urlVerifyStatus, setUrlVerifyStatus] = useState<'idle' | 'valid' | 'invalid'>('idle');
+  const [urlErrorMessage, setUrlErrorMessage] = useState<string>('');
+  const [verifiedUrlPreview, setVerifiedUrlPreview] = useState<string>('');
+
+  // Device upload state
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [isUploading, setIsUploading] = useState<boolean>(false);
+  const [uploadProgress, setUploadProgress] = useState<number>(0);
+  const [uploadErrorMessage, setUploadErrorMessage] = useState<string>('');
+  const [isDragOver, setIsDragOver] = useState<boolean>(false);
+
+  // Preview modal
+  const [previewModalUrl, setPreviewModalUrl] = useState<string | null>(null);
+
+  // Normalize image list (unique, non-empty, main image always included)
+  const allImages = React.useMemo(() => {
+    const list: string[] = [];
+    if (mainImageUrl && mainImageUrl.trim()) {
+      list.push(mainImageUrl.trim());
+    }
+    for (const img of galleryImages) {
+      if (img && img.trim() && !list.includes(img.trim())) {
+        list.push(img.trim());
+      }
+    }
+    return list;
+  }, [mainImageUrl, galleryImages]);
+
+  // Clean URL helper
+  const cleanUrl = (raw: string): string => {
+    let trimmed = raw.trim();
+    if (!trimmed) return '';
+    // Auto add https:// if scheme is missing but looks like a domain
+    if (!/^https?:\/\//i.test(trimmed)) {
+      trimmed = 'https://' + trimmed;
+    }
+    return trimmed;
+  };
+
+  // Real-time URL Image verification
+  const verifyImageUrl = (raw: string) => {
+    const targetUrl = cleanUrl(raw);
+    if (!targetUrl) {
+      setUrlVerifyStatus('idle');
+      setUrlErrorMessage('');
+      setVerifiedUrlPreview('');
+      return;
+    }
+
+    setIsVerifyingUrl(true);
+    setUrlVerifyStatus('idle');
+    setUrlErrorMessage('');
+
+    const img = new Image();
+    let isCancelled = false;
+
+    const timeoutId = setTimeout(() => {
+      if (!isCancelled) {
+        setIsVerifyingUrl(false);
+        setUrlVerifyStatus('invalid');
+        setUrlErrorMessage('หมดเวลาการโหลดรูปภาพ (Timeout) กรุณาตรวจสอบว่า URL เปิดเข้าถึงได้');
+      }
+    }, 8000);
+
+    img.onload = () => {
+      clearTimeout(timeoutId);
+      if (!isCancelled) {
+        setIsVerifyingUrl(false);
+        setUrlVerifyStatus('valid');
+        setUrlErrorMessage('');
+        setVerifiedUrlPreview(targetUrl);
+      }
+    };
+
+    img.onerror = () => {
+      clearTimeout(timeoutId);
+      if (!isCancelled) {
+        setIsVerifyingUrl(false);
+        setUrlVerifyStatus('invalid');
+        setUrlErrorMessage('ไม่สามารถโหลดรูปภาพจาก URL นี้ได้ กรุณาตรวจสอบลิงก์หรือการอนุญาตเข้าถึง');
+      }
+    };
+
+    img.src = targetUrl;
+  };
+
+  const handleUrlInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value;
+    setUrlInput(val);
+    if (val.trim()) {
+      verifyImageUrl(val);
+    } else {
+      setUrlVerifyStatus('idle');
+      setUrlErrorMessage('');
+      setVerifiedUrlPreview('');
+    }
+  };
+
+  // Add verified URL to product images
+  const handleAddUrlImage = () => {
+    const target = cleanUrl(urlInput);
+    if (!target || urlVerifyStatus !== 'valid') return;
+
+    if (allImages.includes(target)) {
+      setUrlErrorMessage('รูปภาพนี้มีอยู่ในรายการสินค้าแล้ว');
+      return;
+    }
+
+    if (allImages.length >= maxImages) {
+      setUrlErrorMessage(`เพิ่มรูปภาพได้สูงสุด ${maxImages} รูปต่อสินค้า`);
+      return;
+    }
+
+    // If no main image exists, set this as main image
+    let newMain = mainImageUrl;
+    let newGallery = [...galleryImages];
+
+    if (!newMain) {
+      newMain = target;
+    } else {
+      newGallery.push(target);
+    }
+
+    onChange(newMain, newGallery);
+    setUrlInput('');
+    setUrlVerifyStatus('idle');
+    setVerifiedUrlPreview('');
+  };
+
+  // Handle Device File Upload
+  const handleFileSelected = async (file: File) => {
+    setUploadErrorMessage('');
+
+    // Check MIME type
+    if (!ALLOWED_MIME_TYPES.includes(file.type.toLowerCase())) {
+      setUploadErrorMessage('รองรับเฉพาะไฟล์รูปภาพ JPG, JPEG, PNG, WebP และ GIF เท่านั้น');
+      return;
+    }
+
+    // Check File Size limit
+    if (file.size > MAX_FILE_SIZE_BYTES) {
+      const sizeMb = (file.size / (1024 * 1024)).toFixed(2);
+      setUploadErrorMessage(
+        `ขนาดไฟล์ ${sizeMb} MB เกินกำหนด (จำกัดขนาดไม่เกิน ${MAX_FILE_SIZE_MB} MB)`
+      );
+      return;
+    }
+
+    if (allImages.length >= maxImages) {
+      setUploadErrorMessage(`เพิ่มรูปภาพได้สูงสุด ${maxImages} รูปต่อสินค้า`);
+      return;
+    }
+
+    try {
+      setIsUploading(true);
+      setUploadProgress(5);
+
+      // Unique storage filename: products/{timestamp}_{sanitized}
+      const safeName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
+      const filename = `products/${Date.now()}_${safeName}`;
+      const storageRef = ref(storage, filename);
+
+      const uploadTask = uploadBytesResumable(storageRef, file, {
+        contentType: file.type,
+      });
+
+      uploadTask.on(
+        'state_changed',
+        (snapshot) => {
+          const progress = Math.round(
+            (snapshot.bytesTransferred / snapshot.totalBytes) * 100
+          );
+          setUploadProgress(Math.max(progress, 10));
+        },
+        (error) => {
+          console.error('Firebase Storage upload error:', error);
+          setIsUploading(false);
+          setUploadProgress(0);
+          setUploadErrorMessage(
+            `อัปโหลดไม่สำเร็จ: ${error.message || 'เกิดข้อผิดพลาดในการเชื่อมต่อ Storage'}`
+          );
+        },
+        async () => {
+          try {
+            const downloadUrl = await getDownloadURL(uploadTask.snapshot.ref);
+            setIsUploading(false);
+            setUploadProgress(100);
+
+            let newMain = mainImageUrl;
+            let newGallery = [...galleryImages];
+
+            if (!newMain) {
+              newMain = downloadUrl;
+            } else {
+              newGallery.push(downloadUrl);
+            }
+
+            onChange(newMain, newGallery);
+            setTimeout(() => setUploadProgress(0), 1000);
+          } catch (downloadErr: any) {
+            console.error('Error getting download URL:', downloadErr);
+            setIsUploading(false);
+            setUploadErrorMessage('เกิดข้อผิดพลาดในการดึงลิงก์รูปภาพ');
+          }
+        }
+      );
+    } catch (err: any) {
+      console.error('Upload exception:', err);
+      setIsUploading(false);
+      setUploadErrorMessage(`เกิดข้อผิดพลาด: ${err.message || 'ไม่สามารถอัปโหลดได้'}`);
+    }
+  };
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      handleFileSelected(e.target.files[0]);
+    }
+    // reset input so same file can be selected again
+    e.target.value = '';
+  };
+
+  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setIsDragOver(false);
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+      handleFileSelected(e.dataTransfer.files[0]);
+    }
+  };
+
+  // Set Main Image
+  const handleSetMain = (targetUrl: string) => {
+    if (targetUrl === mainImageUrl) return;
+    const remaining = allImages.filter((img) => img !== targetUrl);
+    onChange(targetUrl, remaining);
+  };
+
+  // Delete Image
+  const handleDeleteImage = (targetUrl: string) => {
+    const remaining = allImages.filter((img) => img !== targetUrl);
+    if (targetUrl === mainImageUrl) {
+      const nextMain = remaining[0] || '';
+      const nextGallery = remaining.slice(1);
+      onChange(nextMain, nextGallery);
+    } else {
+      onChange(mainImageUrl, remaining.filter((img) => img !== mainImageUrl));
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* Top Header & Tab Controls */}
+      <div>
+        <div className="flex items-center justify-between mb-2">
+          <label className="text-xs md:text-sm font-bold text-slate-800 flex items-center gap-1.5">
+            <ImageIcon className="w-4 h-4 text-blue-600" />
+            <span>จัดการรูปภาพสินค้า (Product Images)</span>
+          </label>
+          <span className="text-[11px] font-medium text-slate-500 bg-slate-100 px-2.5 py-0.5 rounded-full">
+            {allImages.length} / {maxImages} รูป
+          </span>
+        </div>
+
+        {/* Tab switch */}
+        <div className="grid grid-cols-2 gap-1.5 p-1 bg-slate-100 rounded-xl text-xs font-semibold">
+          <button
+            type="button"
+            onClick={() => setActiveTab('upload')}
+            className={`py-2 px-3 rounded-lg flex items-center justify-center gap-2 transition ${
+              activeTab === 'upload'
+                ? 'bg-white text-blue-700 shadow-xs'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <UploadCloud className="w-4 h-4 text-blue-600" />
+            <span>อัปโหลดจากเครื่อง</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('url')}
+            className={`py-2 px-3 rounded-lg flex items-center justify-center gap-2 transition ${
+              activeTab === 'url'
+                ? 'bg-white text-blue-700 shadow-xs'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <Link2 className="w-4 h-4 text-blue-600" />
+            <span>ใส่ลิงก์ URL รูปภาพ</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Mode A: Device File Upload */}
+      {activeTab === 'upload' && (
+        <div className="space-y-2">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/jpeg,image/png,image/webp,image/jpg,image/gif"
+            onChange={handleInputChange}
+            className="hidden"
+          />
+
+          <div
+            onDragOver={(e) => {
+              e.preventDefault();
+              setIsDragOver(true);
+            }}
+            onDragLeave={() => setIsDragOver(false)}
+            onDrop={handleDrop}
+            onClick={() => fileInputRef.current?.click()}
+            className={`border-2 border-dashed rounded-2xl p-4 md:p-6 text-center cursor-pointer transition flex flex-col items-center justify-center gap-2 select-none ${
+              isDragOver
+                ? 'border-blue-500 bg-blue-50/80 scale-[1.01]'
+                : 'border-slate-300 bg-slate-50/60 hover:bg-blue-50/40 hover:border-blue-400'
+            }`}
+          >
+            <div className="w-12 h-12 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 shadow-xs">
+              {isUploading ? (
+                <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
+              ) : (
+                <UploadCloud className="w-6 h-6" />
+              )}
+            </div>
+
+            <div>
+              <p className="text-xs md:text-sm font-bold text-slate-800">
+                {isUploading ? 'กำลังอัปโหลดขึ้นคลาวด์...' : 'แตะเพื่อเลือกรูปภาพ หรือลากไฟล์มาวางที่นี่'}
+              </p>
+              <p className="text-[11px] text-slate-500 mt-0.5">
+                รองรับ iPhone, iPad, Android, Windows, Mac (JPG, PNG, WebP สูงสุด {MAX_FILE_SIZE_MB}MB)
+              </p>
+            </div>
+
+            <button
+              type="button"
+              disabled={isUploading || allImages.length >= maxImages}
+              className="mt-1 px-4 py-1.5 text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition shadow-xs flex items-center gap-1.5 disabled:opacity-50"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>เลือกไฟล์จากอุปกรณ์</span>
+            </button>
+          </div>
+
+          {/* Upload Progress Bar */}
+          {isUploading && (
+            <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl space-y-1.5">
+              <div className="flex items-center justify-between text-xs text-blue-900 font-medium">
+                <span className="flex items-center gap-1.5">
+                  <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-600" />
+                  กำลังส่งรูปภาพขึ้น Firebase Storage...
+                </span>
+                <span className="font-mono font-bold">{uploadProgress}%</span>
+              </div>
+              <div className="w-full bg-blue-200 h-2 rounded-full overflow-hidden">
+                <div
+                  className="bg-blue-600 h-full transition-all duration-200"
+                  style={{ width: `${uploadProgress}%` }}
+                />
+              </div>
+            </div>
+          )}
+
+          {/* Upload Error Banner */}
+          {uploadErrorMessage && (
+            <div className="p-3 bg-red-50 border border-red-200 rounded-xl flex items-start gap-2 text-xs text-red-700">
+              <AlertCircle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <p className="font-semibold">{uploadErrorMessage}</p>
+                <p className="text-[11px] text-red-500 mt-0.5">
+                  เคล็ดลับ: หากอัปโหลดไฟล์ไม่สำเร็จ ท่านสามารถใช้แท็บ "ใส่ลิงก์ URL รูปภาพ" แทนได้ทันที
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setUploadErrorMessage('')}
+                className="text-red-400 hover:text-red-700 p-0.5"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Mode B: URL Input */}
+      {activeTab === 'url' && (
+        <div className="space-y-2">
+          <div className="flex items-center gap-2">
+            <div className="relative flex-1">
+              <input
+                type="text"
+                placeholder="วางลิงก์รูปภาพ เช่น https://images.unsplash.com/... หรือ CDN"
+                value={urlInput}
+                onChange={handleUrlInputChange}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    handleAddUrlImage();
+                  }
+                }}
+                className={`w-full pl-9 pr-9 py-2 text-xs md:text-sm bg-slate-50 border rounded-xl focus:outline-hidden transition ${
+                  urlVerifyStatus === 'valid'
+                    ? 'border-emerald-400 bg-emerald-50/30'
+                    : urlVerifyStatus === 'invalid'
+                    ? 'border-red-400 bg-red-50/30'
+                    : 'border-slate-300 focus:border-blue-500'
+                }`}
+              />
+              <Link2 className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+
+              {/* Status icon inside input */}
+              <div className="absolute right-3 top-2.5">
+                {isVerifyingUrl && <Loader2 className="w-4 h-4 text-blue-600 animate-spin" />}
+                {!isVerifyingUrl && urlVerifyStatus === 'valid' && (
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                )}
+                {!isVerifyingUrl && urlVerifyStatus === 'invalid' && (
+                  <AlertCircle className="w-4 h-4 text-red-500" />
+                )}
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleAddUrlImage}
+              disabled={urlVerifyStatus !== 'valid' || isVerifyingUrl || allImages.length >= maxImages}
+              className="px-4 py-2 text-xs md:text-sm font-semibold bg-blue-600 hover:bg-blue-700 text-white rounded-xl transition shadow-xs disabled:opacity-40 disabled:cursor-not-allowed shrink-0 flex items-center gap-1.5"
+            >
+              <Plus className="w-4 h-4" />
+              <span>เพิ่มรูปภาพ</span>
+            </button>
+          </div>
+
+          {/* Quick info / Help text */}
+          <div className="flex items-center justify-between text-[11px] text-slate-500 px-1">
+            <span>รองรับ Direct Image URL ทุกประเภท (Unsplash, Imgur, Cloudinary, WebP, JPG, PNG)</span>
+            {urlInput && (
+              <button
+                type="button"
+                onClick={() => verifyImageUrl(urlInput)}
+                className="text-blue-600 hover:underline flex items-center gap-1"
+              >
+                <RefreshCw className="w-3 h-3" />
+                <span>ตรวจสอบใหม่</span>
+              </button>
+            )}
+          </div>
+
+          {/* Validated preview & confirmation */}
+          {urlVerifyStatus === 'valid' && verifiedUrlPreview && (
+            <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center gap-3">
+              <img
+                src={verifiedUrlPreview}
+                alt="Preview"
+                className="w-12 h-12 object-cover rounded-lg border border-emerald-300 shadow-2xs shrink-0 bg-white"
+              />
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-bold text-emerald-800 flex items-center gap-1">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                  โหลดรูปภาพสำเร็จ พร้อมเพิ่มลงในสินค้า
+                </p>
+                <p className="text-[11px] text-emerald-700 truncate font-mono mt-0.5">
+                  {verifiedUrlPreview}
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Error Banner */}
+          {urlVerifyStatus === 'invalid' && (
+            <div className="p-3 bg-red-50 border border-red-200 rounded-xl flex items-start gap-2 text-xs text-red-700">
+              <AlertCircle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <p className="font-semibold">{urlErrorMessage || 'ไม่สามารถโหลดรูปภาพจาก URL นี้ได้'}</p>
+                <p className="text-[11px] text-red-500 mt-0.5">
+                  โปรดตรวจสอบว่า URL เป็นลิงก์ตรงของไฟล์รูปภาพและสามารถเปิดดูได้ในเบราว์เซอร์
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Gallery & Main Image Preview Grid */}
+      <div className="space-y-2">
+        <div className="flex items-center justify-between">
+          <p className="text-xs font-bold text-slate-700">
+            คลังรูปภาพของสินค้านี้ ({allImages.length} รูป)
+          </p>
+          <span className="text-[11px] text-slate-400">
+            แตะรูปดาวเพื่อตั้งเป็นภาพหลัก
+          </span>
+        </div>
+
+        {allImages.length === 0 ? (
+          <div className="py-6 border border-dashed border-slate-200 rounded-xl text-center text-slate-400 bg-slate-50/50">
+            <ImageIcon className="w-8 h-8 mx-auto text-slate-300 mb-1" />
+            <p className="text-xs font-medium">ยังไม่มีรูปภาพสำหรับสินค้านี้</p>
+            <p className="text-[11px] text-slate-400 mt-0.5">
+              เลือกอัปโหลดจากเครื่อง หรือกรอก URL เพื่อเพิ่มรูปภาพ
+            </p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2.5">
+            {allImages.map((imgUrl, index) => {
+              const isMain = imgUrl === mainImageUrl;
+              return (
+                <div
+                  key={`${imgUrl}-${index}`}
+                  className={`relative group rounded-xl overflow-hidden border bg-white aspect-square shadow-2xs transition ${
+                    isMain
+                      ? 'border-blue-500 ring-2 ring-blue-400/30'
+                      : 'border-slate-200 hover:border-slate-300'
+                  }`}
+                >
+                  <img
+                    src={imgUrl}
+                    alt={`Product image ${index + 1}`}
+                    className="w-full h-full object-cover"
+                    onError={(e) => {
+                      // Fallback icon placeholder if external URL is blocked later
+                      e.currentTarget.style.display = 'none';
+                      const fallback = e.currentTarget.parentElement?.querySelector('.fallback-placeholder');
+                      if (fallback) fallback.classList.remove('hidden');
+                    }}
+                  />
+
+                  {/* Fallback hidden container */}
+                  <div className="fallback-placeholder hidden absolute inset-0 bg-slate-100 flex flex-col items-center justify-center p-1 text-center">
+                    <AlertCircle className="w-5 h-5 text-amber-500 mb-0.5" />
+                    <span className="text-[9px] text-slate-500">โหลดภาพไม่ผ่าน</span>
+                  </div>
+
+                  {/* Main badge */}
+                  {isMain && (
+                    <div className="absolute top-1.5 left-1.5 bg-blue-600 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-md shadow-xs flex items-center gap-1">
+                      <Star className="w-2.5 h-2.5 fill-current" />
+                      <span>ภาพหลัก</span>
+                    </div>
+                  )}
+
+                  {/* Quick actions overlay */}
+                  <div className="absolute inset-0 bg-slate-900/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1.5 p-1">
+                    {/* Preview full screen */}
+                    <button
+                      type="button"
+                      title="ดูภาพขนาดใหญ่"
+                      onClick={() => setPreviewModalUrl(imgUrl)}
+                      className="p-1.5 bg-white/90 hover:bg-white text-slate-700 rounded-lg shadow-xs transition"
+                    >
+                      <Eye className="w-3.5 h-3.5" />
+                    </button>
+
+                    {/* Set as main */}
+                    {!isMain && (
+                      <button
+                        type="button"
+                        title="ตั้งเป็นภาพหลัก"
+                        onClick={() => handleSetMain(imgUrl)}
+                        className="p-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg shadow-xs transition"
+                      >
+                        <Star className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+
+                    {/* Delete */}
+                    <button
+                      type="button"
+                      title="ลบรูปภาพนี้"
+                      onClick={() => handleDeleteImage(imgUrl)}
+                      className="p-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg shadow-xs transition"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Large Image Preview Modal */}
+      {previewModalUrl && (
+        <div
+          className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in"
+          onClick={() => setPreviewModalUrl(null)}
+        >
+          <div
+            className="relative max-w-xl w-full bg-white rounded-2xl overflow-hidden shadow-2xl p-2"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-3 py-2 border-b border-slate-100">
+              <span className="text-xs font-bold text-slate-800">ตัวอย่างรูปภาพขนาดใหญ่</span>
+              <button
+                type="button"
+                onClick={() => setPreviewModalUrl(null)}
+                className="p-1 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-100"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-2 flex items-center justify-center bg-slate-50 min-h-[250px] max-h-[70vh] overflow-auto">
+              <img
+                src={previewModalUrl}
+                alt="Enlarged preview"
+                className="max-h-[65vh] w-auto max-w-full rounded-xl object-contain shadow-xs"
+              />
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
