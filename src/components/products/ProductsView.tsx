@@ -44,7 +44,6 @@ import { BarcodeScannerDiagnosticModal } from '../common/BarcodeScannerDiagnosti
 import { CategoryModal } from './CategoryModal';
 import { ResetConfirmModal } from '../common/ResetConfirmModal';
 import { playScanSuccessSound, playScanErrorSound } from '../../utils/audio';
-import { ProductImageManager } from './ProductImageManager';
 
 export const ProductsView: React.FC = () => {
   const { products, categories, currency, showToast, currentUser, canViewCosts, t, systemNames } = useApp();
@@ -128,13 +127,6 @@ export const ProductsView: React.FC = () => {
   const [cameraModalTarget, setCameraModalTarget] = useState<'search' | 'form'>('search');
   const [isDiagnosticModalOpen, setIsDiagnosticModalOpen] = useState<boolean>(false);
   const [scannedMatchResult, setScannedMatchResult] = useState<Product | null>(null);
-
-  // Enlarged Image Preview Modal state
-  const [selectedImagePreview, setSelectedImagePreview] = useState<{
-    url: string;
-    title: string;
-    images?: string[];
-  } | null>(null);
 
   // Form Fields
   const [formData, setFormData] = useState<{
@@ -680,42 +672,16 @@ export const ProductsView: React.FC = () => {
                     <tr key={p.id} className="hover:bg-blue-50/40 transition">
                       {/* Image */}
                       <td className="py-3 px-4 w-14">
-                        <div
-                          onClick={() => {
-                            if (p.imageUrl) {
-                              setSelectedImagePreview({
-                                url: p.imageUrl,
-                                title: p.name,
-                                images: p.images && p.images.length > 0 ? p.images : [p.imageUrl],
-                              });
-                            }
-                          }}
-                          className={`w-10 h-10 rounded-lg bg-slate-100 overflow-hidden flex items-center justify-center border border-slate-200 relative group ${
-                            p.imageUrl ? 'cursor-pointer hover:border-blue-400 hover:shadow-xs transition' : ''
-                          }`}
-                          title={p.imageUrl ? 'คลิกเพื่อดูภาพขนาดใหญ่' : undefined}
-                        >
+                        <div className="w-10 h-10 rounded-lg bg-slate-100 overflow-hidden flex items-center justify-center border border-slate-200">
                           {p.imageUrl ? (
-                            <>
-                              <img
-                                src={p.imageUrl}
-                                alt={p.name}
-                                className="w-full h-full object-cover group-hover:scale-105 transition"
-                                onError={(e) => {
-                                  e.currentTarget.style.display = 'none';
-                                  const fallback = e.currentTarget.parentElement?.querySelector('.table-img-fallback');
-                                  if (fallback) fallback.classList.remove('hidden');
-                                }}
-                              />
-                              <div className="table-img-fallback hidden absolute inset-0 bg-slate-100 flex items-center justify-center">
-                                <Tag className="w-4 h-4 text-slate-400" />
-                              </div>
-                              {p.images && p.images.length > 1 && (
-                                <span className="absolute bottom-0.5 right-0.5 bg-blue-600 text-white text-[9px] font-bold px-1 rounded-sm shadow-xs leading-none py-0.5">
-                                  +{p.images.length - 1}
-                                </span>
-                              )}
-                            </>
+                            <img
+                              src={p.imageUrl}
+                              alt={p.name}
+                              className="w-full h-full object-cover"
+                              onError={(e) => {
+                                e.currentTarget.style.display = 'none';
+                              }}
+                            />
                           ) : (
                             <Tag className="w-4 h-4 text-slate-400" />
                           )}
@@ -1111,21 +1077,6 @@ export const ProductsView: React.FC = () => {
                 </div>
               </div>
 
-              {/* Product Image Manager (URL + Upload + Gallery) */}
-              <div className="pt-2 border-t border-slate-200">
-                <ProductImageManager
-                  mainImageUrl={formData.imageUrl}
-                  galleryImages={formData.images || []}
-                  onChange={(mainUrl, gallery) => {
-                    setFormData((prev) => ({
-                      ...prev,
-                      imageUrl: mainUrl,
-                      images: gallery,
-                    }));
-                  }}
-                />
-              </div>
-
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
                   รายละเอียด / บันทึกเพิ่มเติม
@@ -1293,83 +1244,6 @@ export const ProductsView: React.FC = () => {
         }
         confirmLabel="ยืนยันรีเซ็ตฟอร์ม"
       />
-
-      {/* ENLARGED IMAGE & GALLERY PREVIEW MODAL */}
-      {selectedImagePreview && (
-        <div
-          className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in"
-          onClick={() => setSelectedImagePreview(null)}
-        >
-          <div
-            className="relative max-w-xl w-full bg-white rounded-2xl overflow-hidden shadow-2xl p-3 border border-slate-200"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-100">
-              <div className="min-w-0 pr-2">
-                <p className="text-xs font-bold text-slate-800 truncate">
-                  {selectedImagePreview.title}
-                </p>
-                <p className="text-[11px] text-slate-500">
-                  รูปภาพสินค้า ({selectedImagePreview.images?.length || 1} รูป)
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setSelectedImagePreview(null)}
-                className="p-1 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-100"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {/* Main large image */}
-            <div className="p-2 flex items-center justify-center bg-slate-50 rounded-xl min-h-[250px] max-h-[60vh] overflow-hidden">
-              <img
-                src={selectedImagePreview.url}
-                alt={selectedImagePreview.title}
-                className="max-h-[55vh] w-auto max-w-full rounded-lg object-contain shadow-xs"
-                onError={(e) => {
-                  e.currentTarget.style.display = 'none';
-                }}
-              />
-            </div>
-
-            {/* Gallery thumbnails switcher if more than 1 image */}
-            {selectedImagePreview.images && selectedImagePreview.images.length > 1 && (
-              <div className="mt-3 pt-2 border-t border-slate-100">
-                <p className="text-[11px] font-semibold text-slate-600 mb-1.5">
-                  เลือกดูรูปภาพประกอบอื่นๆ:
-                </p>
-                <div className="flex items-center gap-2 overflow-x-auto pb-1">
-                  {selectedImagePreview.images.map((imgUrl, idx) => (
-                    <button
-                      key={`${imgUrl}-${idx}`}
-                      type="button"
-                      onClick={() =>
-                        setSelectedImagePreview({
-                          ...selectedImagePreview,
-                          url: imgUrl,
-                        })
-                      }
-                      className={`w-14 h-14 rounded-lg overflow-hidden shrink-0 border-2 transition ${
-                        selectedImagePreview.url === imgUrl
-                          ? 'border-blue-600 ring-2 ring-blue-300'
-                          : 'border-slate-200 hover:border-slate-400 opacity-70 hover:opacity-100'
-                      }`}
-                    >
-                      <img
-                        src={imgUrl}
-                        alt=""
-                        className="w-full h-full object-cover"
-                      />
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
     </div>
   );
 };

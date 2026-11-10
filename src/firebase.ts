@@ -12,7 +12,6 @@ import {
   updateProfile,
 } from 'firebase/auth';
 import { getFirestore, doc, getDocFromServer } from 'firebase/firestore';
-import { getStorage } from 'firebase/storage';
 import firebaseConfig from '../firebase-applet-config.json';
 
 // Initialize Firebase
@@ -20,15 +19,6 @@ const app = initializeApp(firebaseConfig);
 
 // CRITICAL: The app will break without firebaseConfig.firestoreDatabaseId
 export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
-
-// Initialize Storage with explicit storageBucket from config
-const configuredBucket = firebaseConfig.storageBucket
-  ? (firebaseConfig.storageBucket.startsWith('gs://') ? firebaseConfig.storageBucket : `gs://${firebaseConfig.storageBucket}`)
-  : undefined;
-
-export const storage = getStorage(app, configuredBucket);
-export const storageBucketName = firebaseConfig.storageBucket || '';
-export { firebaseConfig };
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
 
